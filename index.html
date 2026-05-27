@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Defence &amp; Athletics — Client Progress CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- React + Babel via CDN: no build step required -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #e9e9ec; }
+    #root { min-height: 100vh; }
+    input, select, textarea, button { font-family: inherit; }
+    .da-clientcard:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,0,0,.08); }
+    .da-attention:hover { background: #f0f0f0 !important; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+/* ============================================================
+   DEFENCE & ATHLETICS — Client Progress CRM (standalone)
+   Monochrome, athletic, badge-inspired aesthetic.
+   Data persists across sessions via the browser's localStorage.
+   ============================================================ */
+
+// ---- Domain config -----------------------------------------
+const LEVELS = ["Beginner", "Intermediate", "Advanced"];
+
+const LEVEL_STYLE = {
+  Beginner: { ring: "#9aa0a6", fill: "#f1f2f4", text: "#3c4043" },
+  Intermediate: { ring: "#4a4a4a", fill: "#e2e3e5", text: "#1a1a1a" },
+  Advanced: { ring: "#111111", fill: "#111111", text: "#ffffff" },
+};
+
+// Striking skill set
+const SKILL_AREAS = [
+  "Stance & Body Positioning",
+  "Footwork & Movement",
+  "Jab",
+  "Cross",
+  "Hook",
+  "Uppercut",
+  "Defense / Slips & Rolls",
+  "Blocking & Parrying",
+  "Combinations",
+  "Conditioning & Endurance",
+];
+
+const PLAN_TYPES = ["Drop-in", "10 Sessions", "Monthly Unlimited", "3-Month", "Private Coaching"];
+
+// ---- Storage helpers (localStorage — standard browser API) --
+const KEY = "da:roster";
+
+function loadRoster() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function saveRoster(roster) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(roster));
+  } catch (e) {
+    console.error("save failed", e);
+  }
+}
+
+// ---- Seed data (first run only) ----------------------------
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+function newClient(over = {}) {
+  return {
+    id: uid(),
+    name: "",
+    phone: "",
+    email: "",
+    level: "Beginner",
+    plan: "Drop-in",
+    planTotal: 1,
+    planUsed: 0,
+    joined: new Date().toISOString().slice(0, 10),
+    notes: "",
+    skills: Object.fromEntries(SKILL_AREAS.map((s) => [s, 0])),
+    log: [],
+    ...over,
+  };
+}
+
+const SEED = [
+  newClient({
+    name: "Layla Hassan",
+    phone: "+971 50 123 4567",
+    email: "layla.h@email.com",
+    level: "Intermediate",
+    plan: "Monthly Unlimited",
+    planTotal: 30,
+    planUsed: 18,
+    joined: "2025-11-02",
+    notes: "Strong cardio. Working on keeping hands up after the cross.",
+    skills: {
+      "Stance & Body Positioning": 4, "Footwork & Movement": 3, Jab: 4, Cross: 4,
+      Hook: 3, Uppercut: 2, "Defense / Slips & Rolls": 3, "Blocking & Parrying": 3,
+      Combinations: 3, "Conditioning & Endurance": 5,
+    },
+    log: [
+      { date: "2026-05-20", text: "Sparring rounds — composure under pressure improving." },
+      { date: "2026-05-12", text: "Bumped Jab to level 4. Crisp, fast recovery." },
+    ],
+  }),
+  newClient({
+    name: "Omar Khalil",
+    phone: "+971 55 987 6543",
+    email: "omar.k@email.com",
+    level: "Beginner",
+    plan: "10 Sessions",
+    planTotal: 10,
+    planUsed: 7,
+    joined: "2026-03-15",
+    notes: "New to striking. Footwork is the priority this block.",
+    skills: {
+      "Stance & Body Positioning": 2, "Footwork & Movement": 1, Jab: 2, Cross: 2,
+      Hook: 1, Uppercut: 1, "Defense / Slips & Rolls": 1, "Blocking & Parrying": 1,
+      Combinations: 1, "Conditioning & Endurance": 2,
+    },
+    log: [{ date: "2026-05-18", text: "First clean 1-2 on the pads." }],
+  }),
+  newClient({
+    name: "Sara Mansour",
+    phone: "+971 52 444 1212",
+    email: "sara.m@email.com",
+    level: "Advanced",
+    plan: "Private Coaching",
+    planTotal: 12,
+    planUsed: 3,
+    joined: "2024-09-10",
+    notes: "Competition prep. Sharpening counters and exit angles.",
+    skills: {
+      "Stance & Body Positioning": 5, "Footwork & Movement": 5, Jab: 5, Cross: 5,
+      Hook: 4, Uppercut: 4, "Defense / Slips & Rolls": 5, "Blocking & Parrying": 4,
+      Combinations: 5, "Conditioning & Endurance": 5,
+    },
+    log: [{ date: "2026-05-22", text: "Counter off the slip looking sharp. Ready for next spar." }],
+  }),
+  newClient({
+    name: "Calum Siddons",
+    level: "Intermediate",
+    plan: "10 Sessions",
+    planTotal: 10,
+    planUsed: 0,
+    joined: new Date().toISOString().slice(0, 10),
+  }),
+];
+
+// ---- Small UI atoms ----------------------------------------
+function LevelBadge({ level, small }) {
+  const s = LEVEL_STYLE[level] || LEVEL_STYLE.Beginner;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      padding: small ? "2px 8px" : "4px 12px",
+      borderRadius: 999, border: `1.5px solid ${s.ring}`,
+      background: s.fill, color: s.text,
+      fontSize: small ? 10.5 : 12, fontWeight: 700,
+      letterSpacing: ".06em", textTransform: "uppercase",
+      fontFamily: "'Oswald', sans-serif",
+    }}>{level}</span>
+  );
+}
+
+function Stars({ value, onChange, readOnly }) {
+  return (
+    <div style={{ display: "flex", gap: 3 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button key={n} disabled={readOnly}
+          onClick={() => onChange && onChange(n === value ? n - 1 : n)}
+          title={`${n}/5`}
+          style={{
+            width: 18, height: 18, padding: 0, border: "none", background: "transparent",
+            cursor: readOnly ? "default" : "pointer",
+            color: n <= value ? "#111" : "#d2d4d7", transition: "transform .12s ease",
+          }}
+          onMouseEnter={(e) => !readOnly && (e.currentTarget.style.transform = "scale(1.25)")}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <rect x="3" y="10.5" width="18" height="3" rx="1.5" />
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Bar({ pct, danger }) {
+  return (
+    <div style={{ height: 7, background: "#e7e8ea", borderRadius: 6, overflow: "hidden" }}>
+      <div style={{
+        height: "100%", width: `${Math.min(100, pct)}%`,
+        background: danger ? "#111" : "#3c4043", borderRadius: 6, transition: "width .4s ease",
+      }} />
+    </div>
+  );
+}
+
+function Logo({ size = 46 }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-label="Defence & Athletics">
+      <circle cx="50" cy="50" r="48" fill="#fff" stroke="#111" strokeWidth="2.4" />
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#111" strokeWidth="1.6" />
+      <circle cx="8" cy="50" r="1.6" fill="#111" />
+      <circle cx="92" cy="50" r="1.6" fill="#111" />
+      <text x="50" y="62" textAnchor="middle"
+        style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: "1px" }}
+        fill="#111">D|A</text>
+    </svg>
+  );
+}
+
+// ============================================================
+//  MAIN APP
+// ============================================================
+function App() {
+  const [roster, setRoster] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState("dashboard");
+  const [activeId, setActiveId] = useState(null);
+  const [query, setQuery] = useState("");
+  const [filterLevel, setFilterLevel] = useState("All");
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    const data = loadRoster();
+    if (data && Array.isArray(data) && data.length) {
+      setRoster(data);
+    } else {
+      setRoster(SEED);
+      saveRoster(SEED);
+    }
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (loaded) saveRoster(roster);
+  }, [roster, loaded]);
+
+  const active = roster.find((c) => c.id === activeId) || null;
+
+  function updateClient(id, patch) {
+    setRoster((r) => r.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+  function addClient() {
+    const c = newClient({ name: "New Client" });
+    setRoster((r) => [c, ...r]);
+    setActiveId(c.id);
+    setView("profile");
+    setEditing(true);
+  }
+  function deleteClient(id) {
+    setRoster((r) => r.filter((c) => c.id !== id));
+    setView("clients");
+    setActiveId(null);
+  }
+
+  const filtered = useMemo(() => {
+    return roster
+      .filter((c) => filterLevel === "All" || c.level === filterLevel)
+      .filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [roster, query, filterLevel]);
+
+  if (!loaded) {
+    return (
+      <div style={{ ...wrap, display: "grid", placeItems: "center", minHeight: 400 }}>
+        <div style={{ textAlign: "center", color: "#888", fontFamily: "'Oswald',sans-serif", letterSpacing: ".1em" }}>
+          <Logo size={56} />
+          <div style={{ marginTop: 12 }}>LOADING ROSTER…</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={wrap}>
+      <header style={header}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Logo />
+          <div>
+            <div style={brandTitle}>DEFENCE &amp; ATHLETICS</div>
+            <div style={brandSub}>CLIENT PROGRESS CRM · DUBAI</div>
+          </div>
+        </div>
+        <nav style={{ display: "flex", gap: 4 }}>
+          {[["dashboard", "Dashboard"], ["clients", "Clients"]].map(([k, label]) => (
+            <button key={k} onClick={() => { setView(k); setActiveId(null); }} style={navBtn(view === k)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      <main style={{ padding: "22px 26px 40px" }}>
+        {view === "dashboard" && <Dashboard roster={roster} go={(id) => { setActiveId(id); setView("profile"); }} />}
+        {view === "clients" && (
+          <ClientsView
+            list={filtered} query={query} setQuery={setQuery}
+            filterLevel={filterLevel} setFilterLevel={setFilterLevel}
+            onOpen={(id) => { setActiveId(id); setView("profile"); setEditing(false); }}
+            onAdd={addClient}
+          />
+        )}
+        {view === "profile" && active && (
+          <Profile
+            client={active} editing={editing} setEditing={setEditing}
+            onChange={(patch) => updateClient(active.id, patch)}
+            onBack={() => { setView("clients"); setActiveId(null); }}
+            onDelete={() => deleteClient(active.id)}
+          />
+        )}
+      </main>
+
+      <footer style={footer}>
+        Records save automatically to this device. {roster.length} client{roster.length !== 1 ? "s" : ""} on roster.
+      </footer>
+    </div>
+  );
+}
+
+// ============================================================
+//  DASHBOARD
+// ============================================================
+function Dashboard({ roster, go }) {
+  const total = roster.length;
+  const byLevel = LEVELS.map((l) => ({ l, n: roster.filter((c) => c.level === l).length }));
+  const sessionsLeft = roster.reduce((s, c) => s + Math.max(0, c.planTotal - c.planUsed), 0);
+  const lowPlan = roster.filter((c) => c.planTotal - c.planUsed <= 2 && c.planTotal - c.planUsed >= 0);
+  const avgSkill =
+    total === 0 ? 0 :
+    roster.reduce((s, c) => {
+      const v = Object.values(c.skills);
+      return s + (v.reduce((a, b) => a + b, 0) / (v.length * 5));
+    }, 0) / total * 100;
+
+  return (
+    <div>
+      <SectionTitle>Overview</SectionTitle>
+      <div style={statGrid}>
+        <Stat big label="Active Clients" value={total} />
+        <Stat label="Sessions Remaining" value={sessionsLeft} />
+        <Stat label="Avg. Skill Mastery" value={`${avgSkill.toFixed(0)}%`} />
+        <Stat label="Plans Running Low" value={lowPlan.length} accent={lowPlan.length > 0} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18, marginTop: 22 }}>
+        <Card title="Level Distribution">
+          {byLevel.map(({ l, n }) => (
+            <div key={l} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
+                <LevelBadge level={l} small />
+                <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 600 }}>{n}</span>
+              </div>
+              <Bar pct={total ? (n / total) * 100 : 0} />
+            </div>
+          ))}
+        </Card>
+
+        <Card title="Needs Attention — Plans Running Low">
+          {lowPlan.length === 0 ? (
+            <Empty>All clients have sessions remaining.</Empty>
+          ) : (
+            lowPlan.map((c) => {
+              const left = c.planTotal - c.planUsed;
+              return (
+                <button key={c.id} onClick={() => go(c.id)} className="da-attention" style={attentionRow}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: "#777" }}>{c.plan}</div>
+                  </div>
+                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: left <= 0 ? "#b00020" : "#111" }}>
+                    {left <= 0 ? "EXPIRED" : `${left} left`}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  CLIENTS LIST
+// ============================================================
+function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpen, onAdd }) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <SectionTitle>Roster</SectionTitle>
+        <button onClick={onAdd} style={primaryBtn}>+ Add Client</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, margin: "8px 0 18px", flexWrap: "wrap" }}>
+        <input placeholder="Search by name…" value={query} onChange={(e) => setQuery(e.target.value)} style={search} />
+        <select value={filterLevel} onChange={(e) => setFilterLevel(e.target.value)} style={select}>
+          {["All", ...LEVELS].map((l) => <option key={l}>{l}</option>)}
+        </select>
+      </div>
+
+      {list.length === 0 ? (
+        <Empty>No clients match. Add one to get started.</Empty>
+      ) : (
+        <div style={cardGrid}>
+          {list.map((c) => {
+            const left = c.planTotal - c.planUsed;
+            const pct = c.planTotal ? (c.planUsed / c.planTotal) * 100 : 0;
+            const mastery = Object.values(c.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
+            return (
+              <button key={c.id} onClick={() => onOpen(c.id)} className="da-clientcard" style={clientCard}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <div style={avatar}>{initials(c.name)}</div>
+                    <div style={{ textAlign: "left" }}>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: "#777" }}>{c.plan}</div>
+                    </div>
+                  </div>
+                  <LevelBadge level={c.level} small />
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <div style={miniLabel}>
+                    <span>Plan usage</span>
+                    <span style={{ color: left <= 2 ? "#b00020" : "#444", fontWeight: 600 }}>
+                      {c.planUsed}/{c.planTotal} · {left <= 0 ? "expired" : `${left} left`}
+                    </span>
+                  </div>
+                  <Bar pct={pct} danger={left <= 2} />
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={miniLabel}>
+                    <span>Skill mastery</span>
+                    <span style={{ fontWeight: 600 }}>{mastery.toFixed(0)}%</span>
+                  </div>
+                  <Bar pct={mastery} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  CLIENT PROFILE
+// ============================================================
+function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
+  const [logText, setLogText] = useState("");
+  const left = client.planTotal - client.planUsed;
+  const mastery = Object.values(client.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  function setSkill(area, val) { onChange({ skills: { ...client.skills, [area]: val } }); }
+  function logSession(delta) {
+    const used = Math.max(0, Math.min(client.planTotal, client.planUsed + delta));
+    onChange({ planUsed: used });
+  }
+  function addLog() {
+    if (!logText.trim()) return;
+    const entry = { date: new Date().toISOString().slice(0, 10), text: logText.trim() };
+    onChange({ log: [entry, ...client.log] });
+    setLogText("");
+  }
+
+  return (
+    <div>
+      <button onClick={onBack} style={backBtn}>← Back to roster</button>
+
+      <div style={profileHead}>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div style={{ ...avatar, width: 60, height: 60, fontSize: 22 }}>{initials(client.name)}</div>
+          <div>
+            {editing ? (
+              <input value={client.name} onChange={(e) => onChange({ name: e.target.value })}
+                style={{ ...search, fontSize: 22, fontWeight: 700, width: 280 }} />
+            ) : (
+              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Oswald',sans-serif", letterSpacing: ".01em" }}>
+                {client.name}
+              </div>
+            )}
+            <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10 }}>
+              <LevelBadge level={client.level} />
+              <span style={{ fontSize: 12, color: "#888" }}>Member since {client.joined}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setEditing(!editing)} style={editing ? primaryBtn : ghostBtn}>
+            {editing ? "Done" : "Edit"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 18, marginTop: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <Card title="Details">
+            <Field label="Phone" editing={editing} value={client.phone} onChange={(v) => onChange({ phone: v })} />
+            <Field label="Email" editing={editing} value={client.email} onChange={(v) => onChange({ email: v })} />
+            <div style={fieldRow}>
+              <span style={fieldLabel}>Level</span>
+              {editing ? (
+                <select value={client.level} onChange={(e) => onChange({ level: e.target.value })} style={select}>
+                  {LEVELS.map((l) => <option key={l}>{l}</option>)}
+                </select>
+              ) : <LevelBadge level={client.level} small />}
+            </div>
+          </Card>
+
+          <Card title="Plan Usage">
+            {editing ? (
+              <>
+                <div style={fieldRow}>
+                  <span style={fieldLabel}>Plan</span>
+                  <select value={client.plan} onChange={(e) => onChange({ plan: e.target.value })} style={select}>
+                    {PLAN_TYPES.map((p) => <option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div style={fieldRow}>
+                  <span style={fieldLabel}>Total sessions</span>
+                  <input type="number" min="0" value={client.planTotal}
+                    onChange={(e) => onChange({ planTotal: +e.target.value || 0 })} style={{ ...search, width: 80 }} />
+                </div>
+                <div style={fieldRow}>
+                  <span style={fieldLabel}>Used</span>
+                  <input type="number" min="0" value={client.planUsed}
+                    onChange={(e) => onChange({ planUsed: +e.target.value || 0 })} style={{ ...search, width: 80 }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 13, color: "#777", marginBottom: 4 }}>{client.plan}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif" }}>{client.planUsed}</span>
+                  <span style={{ color: "#999" }}>/ {client.planTotal} used</span>
+                  <span style={{ marginLeft: "auto", fontWeight: 700, color: left <= 2 ? "#b00020" : "#111", fontFamily: "'Oswald',sans-serif" }}>
+                    {left <= 0 ? "EXPIRED" : `${left} LEFT`}
+                  </span>
+                </div>
+                <Bar pct={client.planTotal ? (client.planUsed / client.planTotal) * 100 : 0} danger={left <= 2} />
+                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                  <button onClick={() => logSession(1)} style={primaryBtn}>＋ Log session</button>
+                  <button onClick={() => logSession(-1)} style={ghostBtn}>－ Undo</button>
+                </div>
+              </>
+            )}
+          </Card>
+
+          <Card title="Coach Notes">
+            <textarea value={client.notes} onChange={(e) => onChange({ notes: e.target.value })}
+              placeholder="General notes about this client…" style={textarea} />
+          </Card>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <Card title={`Key Working Areas · ${mastery.toFixed(0)}% mastery`}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {SKILL_AREAS.map((area) => (
+                <div key={area} style={skillRow}>
+                  <span style={{ fontSize: 13.5 }}>{area}</span>
+                  <Stars value={client.skills[area] || 0} onChange={(v) => setSkill(area, v)} />
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11.5, color: "#999", marginTop: 12 }}>
+              Tap the bars to rate 0–5. Higher rating = stronger command of the technique.
+            </div>
+          </Card>
+
+          <Card title="Progress Log">
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              <input value={logText} onChange={(e) => setLogText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addLog()}
+                placeholder="Add a progress note…" style={{ ...search, flex: 1 }} />
+              <button onClick={addLog} style={primaryBtn}>Add</button>
+            </div>
+            {client.log.length === 0 ? (
+              <Empty>No log entries yet.</Empty>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {client.log.map((e, i) => (
+                  <div key={i} style={logRow}>
+                    <span style={logDot} />
+                    <div>
+                      <div style={{ fontSize: 11, color: "#999", fontFamily: "'Oswald',sans-serif", letterSpacing: ".05em" }}>{e.date}</div>
+                      <div style={{ fontSize: 13.5 }}>{e.text}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <div style={{ marginTop: 4 }}>
+            {!confirmDel ? (
+              <button onClick={() => setConfirmDel(true)} style={dangerGhost}>Remove client</button>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 13, color: "#b00020" }}>Permanently remove {client.name}?</span>
+                <button onClick={onDelete} style={dangerBtn}>Yes, remove</button>
+                <button onClick={() => setConfirmDel(false)} style={ghostBtn}>Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Reusable bits -----------------------------------------
+function SectionTitle({ children }) {
+  return <h2 style={{
+    fontFamily: "'Oswald',sans-serif", fontSize: 14, letterSpacing: ".18em",
+    textTransform: "uppercase", color: "#999", margin: "4px 0 16px", fontWeight: 600,
+  }}>{children}</h2>;
+}
+function Card({ title, children }) {
+  return <section style={card}><div style={cardTitle}>{title}</div>{children}</section>;
+}
+function Stat({ label, value, big, accent }) {
+  return (
+    <div style={{ ...statCard, gridColumn: big ? "span 1" : "auto" }}>
+      <div style={{ fontSize: big ? 46 : 38, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: accent ? "#b00020" : "#111", lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: "#888", letterSpacing: ".08em", textTransform: "uppercase", marginTop: 8, fontWeight: 600 }}>{label}</div>
+    </div>
+  );
+}
+function Field({ label, value, editing, onChange }) {
+  return (
+    <div style={fieldRow}>
+      <span style={fieldLabel}>{label}</span>
+      {editing
+        ? <input value={value} onChange={(e) => onChange(e.target.value)} style={{ ...search, width: 180 }} />
+        : <span style={{ fontSize: 14 }}>{value || "—"}</span>}
+    </div>
+  );
+}
+function Empty({ children }) {
+  return <div style={{ color: "#aaa", fontSize: 13.5, padding: "8px 0" }}>{children}</div>;
+}
+const initials = (n) => (n || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
+// ---- Styles ------------------------------------------------
+const wrap = { fontFamily: "'Inter', sans-serif", color: "#111", background: "#f4f4f5", minHeight: "100vh", maxWidth: 1180, margin: "0 auto" };
+const header = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 26px", background: "#fff", borderBottom: "2px solid #111", position: "sticky", top: 0, zIndex: 5 };
+const brandTitle = { fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: ".06em" };
+const brandSub = { fontSize: 10.5, letterSpacing: ".22em", color: "#999", fontFamily: "'Oswald',sans-serif", marginTop: 2 };
+const navBtn = (on) => ({ fontFamily: "'Oswald',sans-serif", fontWeight: 600, fontSize: 13, letterSpacing: ".08em", textTransform: "uppercase", padding: "9px 18px", cursor: "pointer", border: "1.5px solid #111", borderRadius: 999, background: on ? "#111" : "transparent", color: on ? "#fff" : "#111", transition: "all .15s ease" });
+const footer = { textAlign: "center", padding: "18px", fontSize: 12, color: "#aaa", borderTop: "1px solid #e2e2e2" };
+const statGrid = { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 };
+const statCard = { background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: "22px 20px" };
+const card = { background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: 18 };
+const cardTitle = { fontFamily: "'Oswald',sans-serif", fontSize: 12.5, letterSpacing: ".12em", textTransform: "uppercase", color: "#888", fontWeight: 600, marginBottom: 14, paddingBottom: 10, borderBottom: "1px solid #eee" };
+const cardGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 };
+const clientCard = { textAlign: "left", background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: 18, cursor: "pointer", transition: "transform .15s ease, box-shadow .15s ease", fontFamily: "'Inter',sans-serif", color: "#111" };
+const avatar = { width: 42, height: 42, borderRadius: "50%", background: "#111", color: "#fff", display: "grid", placeItems: "center", fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 15, flexShrink: 0 };
+const miniLabel = { display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#888", marginBottom: 5 };
+const search = { padding: "9px 12px", border: "1.5px solid #ddd", borderRadius: 8, fontFamily: "'Inter',sans-serif", fontSize: 14, outline: "none", background: "#fff" };
+const select = { ...search, cursor: "pointer" };
+const primaryBtn = { background: "#111", color: "#fff", border: "1.5px solid #111", borderRadius: 8, padding: "9px 16px", fontFamily: "'Oswald',sans-serif", fontWeight: 600, letterSpacing: ".05em", fontSize: 13, cursor: "pointer", textTransform: "uppercase" };
+const ghostBtn = { ...primaryBtn, background: "transparent", color: "#111" };
+const dangerBtn = { ...primaryBtn, background: "#b00020", borderColor: "#b00020" };
+const dangerGhost = { ...ghostBtn, color: "#b00020", borderColor: "#e0b4bb", fontSize: 12 };
+const backBtn = { background: "transparent", border: "none", color: "#888", cursor: "pointer", fontSize: 13, fontFamily: "'Oswald',sans-serif", letterSpacing: ".05em", padding: 0, marginBottom: 14 };
+const profileHead = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: "18px 22px", marginBottom: 18, flexWrap: "wrap", gap: 12 };
+const fieldRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f2f2f2" };
+const fieldLabel = { fontSize: 12.5, color: "#999", letterSpacing: ".04em" };
+const textarea = { width: "100%", minHeight: 90, padding: "10px 12px", border: "1.5px solid #ddd", borderRadius: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, resize: "vertical", outline: "none" };
+const skillRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid #f4f4f4" };
+const attentionRow = { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "#fafafa", border: "1px solid #eee", borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer", textAlign: "left", fontFamily: "'Inter',sans-serif", color: "#111" };
+const logRow = { display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid #f4f4f4" };
+const logDot = { width: 8, height: 8, borderRadius: "50%", background: "#111", marginTop: 6, flexShrink: 0 };
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
