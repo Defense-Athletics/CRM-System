@@ -85,7 +85,14 @@ const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 // ---- Date / week helpers -----------------------------------
-const ymd = (d) => d.toISOString().slice(0, 10);          // "2026-05-27"
+// Local-date "YYYY-MM-DD" (NOT UTC) so dates match the user's actual
+// calendar day — important for Dubai (UTC+4) and other +offsets.
+const ymd = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const todayStr = () => ymd(new Date());
 
 // Monday-start week containing the given date.
@@ -173,7 +180,7 @@ function newClient(over = {}) {
     plan: "Drop-in",
     planTotal: 1,
     planUsed: 0,
-    joined: new Date().toISOString().slice(0, 10),
+    joined: todayStr(),
     notes: "",
     skills: Object.fromEntries(SKILL_AREAS.map((s) => [s, 0])),
     log: [],
@@ -242,7 +249,7 @@ const SEED = [
     plan: "10 Sessions",
     planTotal: 10,
     planUsed: 0,
-    joined: new Date().toISOString().slice(0, 10),
+    joined: todayStr(),
   }),
 ];
 
@@ -906,7 +913,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
   }
   function addLog() {
     if (!logText.trim()) return;
-    const entry = { date: new Date().toISOString().slice(0, 10), text: logText.trim() };
+    const entry = { date: todayStr(), text: logText.trim() };
     onChange({ log: [entry, ...client.log] });
     setLogText("");
   }
