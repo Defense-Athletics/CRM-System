@@ -67,6 +67,34 @@ const SKILL_AREAS = [
 
 const PLAN_TYPES = ["Drop-in", "10 Sessions", "Monthly Unlimited", "3-Month", "Private Coaching"];
 
+// Weekly class schedule (Adult Group Classes). day: 0=Sun … 6=Sat.
+// Edit this list to add kids' / private classes later.
+const CLASS_SCHEDULE = [
+  { day: 1, time: "09:00", name: "Adult Group" },
+  { day: 2, time: "09:00", name: "Adult Group" },
+  { day: 2, time: "18:30", name: "Adult Group" },
+  { day: 3, time: "09:00", name: "Adult Group" },
+  { day: 4, time: "09:00", name: "Adult Group" },
+  { day: 4, time: "18:30", name: "Adult Group" },
+  { day: 5, time: "09:00", name: "Adult Group" },
+  { day: 6, time: "09:00", name: "Adult Group" },
+  { day: 6, time: "10:15", name: "Adult Group" },
+  { day: 0, time: "09:00", name: "Adult Group" },
+];
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// Classes that run on a given JS date, sorted by time.
+function classesForDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  return CLASS_SCHEDULE
+    .filter((c) => c.day === day)
+    .sort((a, b) => a.time.localeCompare(b.time));
+}
+// A stable id for one class occurrence on a date, e.g. "2026-05-27_18:30".
+const occId = (dateStr, time) => `${dateStr}_${time}`;
+
 // ---- Database helpers (Supabase — shared live storage) -----
 // Each client is one row: { id, data (jsonb), updated_at }.
 // Per-client writes mean two coaches editing different clients
@@ -88,6 +116,21 @@ async function dbUpsertClient(client) {
 async function dbDeleteClient(id) {
   const { error } = await sb.from("roster").delete().eq("id", id);
   if (error) console.error("delete failed", error);
+}
+
+// ---- Attendance helpers (Supabase: table `attendance`) ------
+// One row per class occurrence: { occ_id, client_ids (jsonb array) }.
+async function dbLoadAttendance(occId) {
+  const { data, error } = await sb
+    .from("attendance").select("client_ids").eq("occ_id", occId).maybeSingle();
+  if (error) { console.error("attendance load failed", error); return []; }
+  return (data && data.client_ids) ? data.client_ids : [];
+}
+async function dbSaveAttendance(occId, clientIds) {
+  const { error } = await sb
+    .from("attendance")
+    .upsert({ occ_id: occId, client_ids: clientIds, updated_at: new Date().toISOString() });
+  if (error) console.error("attendance save failed", error);
 }
 
 // ---- Seed data (first run only) ----------------------------
@@ -405,7 +448,7 @@ function App() {
           </div>
         </div>
         <nav style={{ display: "flex", gap: 4 }}>
-          {[["dashboard", "Dashboard"], ["clients", "Clients"]].map(([k, label]) => (
+          {[["dashboard", "Dashboard"], ["clients", "Clients"], ["classes", "Classes"]].map(([k, label]) => (
             <button key={k} onClick={() => { setView(k); setActiveId(null); }} style={navBtn(view === k)}>
               {label}
             </button>
@@ -431,11 +474,225 @@ function App() {
             onDelete={() => deleteClient(active.id)}
           />
         )}
+        {view === "classes" && (
+          <ClassesView
+            roster={roster}
+            onLogSession={(clientId, className, dateStr) => {
+              const c = roster.find((x) => x.id === clientId);
+              if (!c) return;
+              const used = Math.min(c.planTotal, (c.planUsed || 0) + 1);
+              const note = { date: dateStr, text: `Attended ${className} class.` };
+              updateClient(clientId, { planUsed: used, log: [note, ...(c.log || [])] });
+            }}
+            onUndoSession={(clientId, dateStr) => {
+              const c = roster.find((x) => x.id === clientId);
+              if (!c) return;
+              const used = Math.max(0, (c.planUsed || 0) - 1);
+              // remove the most recent attendance note for that date if present
+              const log = [...(c.log || [])];
+              const i = log.findIndex((e) => e.date === dateStr && e.text.startsWith("Attended "));
+              if (i >= 0) log.splice(i, 1);
+              updateClient(clientId, { planUsed: used, log });
+            }}
+          />
+        )}
       </main>
 
       <footer style={footer}>
         {syncing ? "Saving…" : "Saved to shared database"} · {roster.length} client{roster.length !== 1 ? "s" : ""} on roster · live across all devices
       </footer>
+    </div>
+  );
+}
+
+// ============================================================
+//  CLASSES + ATTENDANCE
+// ============================================================
+function ClassesView({ roster, onLogSession, onUndoSession }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateStr, setDateStr] = useState(today);
+  const [openClass, setOpenClass] = useState(null); // {time, name} or null
+
+  const classes = classesForDate(dateStr);
+  const d = new Date(dateStr + "T00:00:00");
+  const niceDate = `${DAY_FULL[d.getDay()]}, ${d.toLocaleDateString(undefined, { day: "numeric", month: "long" })}`;
+
+  function shiftDay(delta) {
+    const nd = new Date(dateStr + "T00:00:00");
+    nd.setDate(nd.getDate() + delta);
+    setDateStr(nd.toISOString().slice(0, 10));
+    setOpenClass(null);
+  }
+
+  if (openClass) {
+    return (
+      <ClassAttendance
+        roster={roster}
+        dateStr={dateStr}
+        niceDate={niceDate}
+        klass={openClass}
+        onBack={() => setOpenClass(null)}
+        onLogSession={onLogSession}
+        onUndoSession={onUndoSession}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <SectionTitle>Classes &amp; Attendance</SectionTitle>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+        <button onClick={() => shiftDay(-1)} style={ghostBtn}>‹ Prev</button>
+        <input type="date" value={dateStr} onChange={(e) => setDateStr(e.target.value)} style={{ ...search }} />
+        <button onClick={() => shiftDay(1)} style={ghostBtn}>Next ›</button>
+        <button onClick={() => { setDateStr(today); setOpenClass(null); }} style={primaryBtn}>Today</button>
+        <span style={{ marginLeft: "auto", fontFamily: "'Oswald',sans-serif", fontWeight: 600, color: "#555", letterSpacing: ".04em" }}>
+          {niceDate}
+        </span>
+      </div>
+
+      {classes.length === 0 ? (
+        <Empty>No classes scheduled on this day.</Empty>
+      ) : (
+        <div style={cardGrid}>
+          {classes.map((c) => (
+            <ClassCard
+              key={occId(dateStr, c.time)}
+              dateStr={dateStr}
+              klass={c}
+              onOpen={() => setOpenClass(c)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One class tile on the day list — shows a live attendee count.
+function ClassCard({ dateStr, klass, onOpen }) {
+  const [count, setCount] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    dbLoadAttendance(occId(dateStr, klass.time)).then((ids) => { if (alive) setCount(ids.length); });
+    return () => { alive = false; };
+  }, [dateStr, klass.time]);
+
+  return (
+    <button onClick={onOpen} className="da-clientcard" style={{ ...clientCard, display: "block" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ textAlign: "left" }}>
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 26, letterSpacing: ".02em" }}>{klass.time}</div>
+          <div style={{ fontSize: 13, color: "#777", marginTop: 2 }}>{klass.name}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 22 }}>
+            {count === null ? "…" : count}
+          </div>
+          <div style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: ".08em" }}>attending</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 14, fontSize: 12.5, color: "#111", fontFamily: "'Oswald',sans-serif", letterSpacing: ".05em" }}>
+        TAP TO TAKE REGISTER →
+      </div>
+    </button>
+  );
+}
+
+// Attendance register for one class occurrence.
+function ClassAttendance({ roster, dateStr, niceDate, klass, onBack, onLogSession, onUndoSession }) {
+  const id = occId(dateStr, klass.time);
+  const [present, setPresent] = useState(null); // array of client ids
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    dbLoadAttendance(id).then((ids) => { if (alive) setPresent(ids); });
+    return () => { alive = false; };
+  }, [id]);
+
+  function toggle(clientId) {
+    if (!present) return;
+    const isIn = present.includes(clientId);
+    const next = isIn ? present.filter((x) => x !== clientId) : [...present, clientId];
+    setPresent(next);
+    setBusy(true);
+    dbSaveAttendance(id, next).finally(() => setBusy(false));
+    // keep the plan/session in sync
+    if (isIn) onUndoSession(clientId, dateStr);
+    else onLogSession(clientId, klass.name, dateStr);
+  }
+
+  const sorted = [...roster].sort((a, b) => a.name.localeCompare(b.name));
+  const list = sorted.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div>
+      <button onClick={onBack} style={backBtn}>← Back to classes</button>
+
+      <div style={profileHead}>
+        <div>
+          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Oswald',sans-serif" }}>
+            {klass.time} · {klass.name}
+          </div>
+          <div style={{ fontSize: 12.5, color: "#888", marginTop: 4 }}>{niceDate}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 800, fontSize: 30 }}>
+            {present === null ? "…" : present.length}
+          </div>
+          <div style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: ".08em" }}>
+            {busy ? "saving…" : "checked in"}
+          </div>
+        </div>
+      </div>
+
+      <input placeholder="Search clients…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ ...search, width: "100%", marginBottom: 14 }} />
+
+      {present === null ? (
+        <Empty>Loading register…</Empty>
+      ) : list.length === 0 ? (
+        <Empty>No clients found. Add clients on the Clients tab first.</Empty>
+      ) : (
+        <div style={card}>
+          {list.map((c) => {
+            const isIn = present.includes(c.id);
+            const left = c.planTotal - c.planUsed;
+            return (
+              <div key={c.id} style={{ ...skillRow, cursor: "pointer" }} onClick={() => toggle(c.id)}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+                    border: `2px solid ${isIn ? "#111" : "#ccc"}`,
+                    background: isIn ? "#111" : "#fff",
+                    display: "grid", placeItems: "center",
+                  }}>
+                    {isIn && (
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" strokeWidth="3">
+                        <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.name}</div>
+                    <div style={{ fontSize: 11.5, color: left <= 2 ? "#b00020" : "#999" }}>
+                      {c.plan} · {left <= 0 ? "no sessions left" : `${left} left`}
+                    </div>
+                  </div>
+                </div>
+                <LevelBadge level={c.level} small />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11.5, color: "#999", marginTop: 12 }}>
+        Checking a client in logs one session against their plan and adds a note to their progress log.
+        Un-checking reverses it.
+      </div>
     </div>
   );
 }
