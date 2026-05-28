@@ -229,6 +229,26 @@ async function dbSaveAttendance(occ, clientIds) {
   if (error) console.error("attendance save failed", error);
 }
 
+// ---- 1-1 booking helpers (Supabase: table `one_to_ones`) ----
+// Each booking: { id, date ("YYYY-MM-DD"), time ("HH:MM"), with_who, note }.
+async function dbLoadOneToOnes() {
+  const { data, error } = await sb
+    .from("one_to_ones").select("id, date, time, with_who, note");
+  if (error) { console.error("1-1 load failed", error); return []; }
+  return data || [];
+}
+async function dbSaveOneToOne(b) {
+  const { error } = await sb.from("one_to_ones").upsert({
+    id: b.id, date: b.date, time: b.time, with_who: b.with_who, note: b.note,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) console.error("1-1 save failed", error);
+}
+async function dbDeleteOneToOne(id) {
+  const { error } = await sb.from("one_to_ones").delete().eq("id", id);
+  if (error) console.error("1-1 delete failed", error);
+}
+
 // ---- Seed data (first run only) ----------------------------
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -545,7 +565,7 @@ function App() {
           </div>
         </div>
         <nav style={{ display: "flex", gap: 4 }}>
-          {[["dashboard", "Dashboard"], ["clients", "Clients"], ["classes", "Classes"]].map(([k, label]) => (
+          {[["dashboard", "Dashboard"], ["clients", "Clients"], ["classes", "Classes"], ["oneToOnes", "1-1 Sessions"]].map(([k, label]) => (
             <button key={k} onClick={() => { setView(k); setActiveId(null); }} style={navBtn(view === k)}>
               {label}
             </button>
@@ -586,6 +606,7 @@ function App() {
             }}
           />
         )}
+        {view === "oneToOnes" && <OneToOnesView />}
       </main>
 
       <footer style={footer}>
@@ -831,6 +852,180 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
 }
 
 // ============================================================
+//  1-1 SESSIONS  (dated weekly view, free-text bookings)
+// ============================================================
+function OneToOnesView() {
+  const [anchor, setAnchor] = useState(() => startOfWeek(new Date()));
+  const [bookings, setBookings] = useState(null); // array | null while loading
+  const [editId, setEditId] = useState(null);     // id being edited, or "new"
+  const [form, setForm] = useState({ date: todayStr(), time: "12:00", with_who: "", note: "" });
+  const today = todayStr();
+  const now = new Date();
+
+  function refresh() {
+    dbLoadOneToOnes().then((rows) => setBookings(rows));
+  }
+  useEffect(() => { refresh(); }, []);
+
+  const days = weekDates(anchor);
+  function shiftWeek(delta) {
+    const nd = new Date(anchor); nd.setDate(nd.getDate() + delta * 7);
+    setAnchor(startOfWeek(nd));
+  }
+  function openNew(dateStr) {
+    setForm({ date: dateStr || today, time: "12:00", with_who: "", note: "" });
+    setEditId("new");
+  }
+  function openEdit(b) {
+    setForm({ date: b.date, time: b.time, with_who: b.with_who || "", note: b.note || "" });
+    setEditId(b.id);
+  }
+  function save() {
+    if (!form.with_who.trim()) return;
+    const b = {
+      id: editId === "new" ? Math.random().toString(36).slice(2, 9) : editId,
+      date: form.date, time: form.time, with_who: form.with_who.trim(), note: form.note.trim(),
+    };
+    // optimistic update
+    setBookings((bs) => {
+      const others = (bs || []).filter((x) => x.id !== b.id);
+      return [...others, b];
+    });
+    dbSaveOneToOne(b).then(refresh);
+    setEditId(null);
+  }
+  function remove(id) {
+    setBookings((bs) => (bs || []).filter((x) => x.id !== id));
+    dbDeleteOneToOne(id).then(refresh);
+    setEditId(null);
+  }
+
+  const weekStart = days[0], weekEnd = days[6];
+  const rangeLabel =
+    `${weekStart.toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ` +
+    `${weekEnd.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <SectionTitle>1-1 Sessions</SectionTitle>
+        <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
+          <button onClick={() => openNew(today)} style={primaryBtn}>+ Book 1-1</button>
+          <button onClick={() => shiftWeek(-1)} style={ghostBtn}>‹ Prev</button>
+          <button onClick={() => setAnchor(startOfWeek(new Date()))} style={ghostBtn}>This week</button>
+          <button onClick={() => shiftWeek(1)} style={ghostBtn}>Next ›</button>
+        </div>
+      </div>
+      <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 600, color: "#9a9a98", letterSpacing: ".04em", marginBottom: 14 }}>
+        Week of {rangeLabel}
+      </div>
+
+      {bookings === null ? (
+        <Empty>Loading 1-1 sessions…</Empty>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {days.map((d) => {
+            const dateStr = ymd(d);
+            const isPast = dateStr < today;
+            const isToday = dateStr === today;
+            const dayBookings = bookings
+              .filter((b) => b.date === dateStr)
+              .sort((a, b) => a.time.localeCompare(b.time));
+            return (
+              <div key={dateStr} style={{
+                display: "flex", gap: 16, alignItems: "flex-start",
+                background: isPast ? "#121213" : "#161617",
+                border: `1px solid ${isToday ? "#d4af37" : "#2c2c2e"}`,
+                borderRadius: 12, padding: "14px 18px",
+              }}>
+                <div style={{ width: 84, flexShrink: 0 }}>
+                  <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: ".06em", color: isPast ? "#6e6e6c" : "#f2f2f0", textTransform: "uppercase" }}>{DAY_NAMES[d.getDay()]}</div>
+                  <div style={{ fontSize: 12, color: "#9a9a98" }}>{d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}</div>
+                  {isToday && <div style={{ fontSize: 10, fontWeight: 700, color: "#d4af37", letterSpacing: ".08em", marginTop: 2 }}>TODAY</div>}
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", flex: 1 }}>
+                  {dayBookings.length === 0 ? (
+                    <button onClick={() => openNew(dateStr)} style={{ ...ghostBtn, fontSize: 12, opacity: 0.6 }}>+ Add</button>
+                  ) : dayBookings.map((b) => {
+                    const slotPast = isPast || (new Date(`${b.date}T${b.time}:00`) < now);
+                    return (
+                      <button key={b.id} onClick={() => openEdit(b)} className="da-clientcard"
+                        style={{
+                          display: "flex", flexDirection: "column", alignItems: "flex-start",
+                          border: `1.5px solid ${slotPast ? "#3a3a3c" : "#d4af37"}`,
+                          borderRadius: 10, background: slotPast ? "#161617" : "#1f1f21",
+                          color: slotPast ? "#9a9a98" : "#f2f2f0",
+                          padding: "8px 14px", cursor: "pointer", minWidth: 120, textAlign: "left",
+                        }}>
+                        <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 17 }}>{b.time}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 600 }}>{b.with_who}</span>
+                        {b.note && <span style={{ fontSize: 10.5, color: "#9a9a98", marginTop: 2 }}>{b.note}</span>}
+                      </button>
+                    );
+                  })}
+                  {dayBookings.length > 0 && (
+                    <button onClick={() => openNew(dateStr)} style={{ ...ghostBtn, fontSize: 12, opacity: 0.6, alignSelf: "center" }}>+</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 16 }}>
+        1-1 sessions are separate from memberships — booking one does not deduct a client's weekly sessions.
+        Past sessions are greyed but stay editable.
+      </div>
+
+      {editId && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,.6)",
+          display: "grid", placeItems: "center", zIndex: 50, padding: 16,
+        }} onClick={() => setEditId(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: "#161617", border: "1px solid #2c2c2e", borderRadius: 16,
+            padding: 24, width: 360, maxWidth: "100%",
+          }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 18, color: "#d4af37", letterSpacing: ".04em", marginBottom: 16 }}>
+              {editId === "new" ? "Book 1-1 Session" : "Edit 1-1 Session"}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>Date</div>
+                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ ...search, width: "100%" }} />
+              </div>
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>Time</div>
+                <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ ...search, width: "100%" }} />
+              </div>
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>With (name)</div>
+                <input value={form.with_who} autoFocus placeholder="e.g. James / coach + client"
+                  onChange={(e) => setForm({ ...form, with_who: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && save()} style={{ ...search, width: "100%" }} />
+              </div>
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>Note (optional)</div>
+                <input value={form.note} placeholder="focus / location…"
+                  onChange={(e) => setForm({ ...form, note: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && save()} style={{ ...search, width: "100%" }} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 18, alignItems: "center" }}>
+              <button onClick={save} style={{ ...primaryBtn, opacity: form.with_who.trim() ? 1 : 0.45 }}>Save</button>
+              <button onClick={() => setEditId(null)} style={ghostBtn}>Cancel</button>
+              {editId !== "new" && (
+                <button onClick={() => remove(editId)} style={{ ...dangerGhost, marginLeft: "auto" }}>Delete</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ============================================================
 //  DASHBOARD
 // ============================================================
 function Dashboard({ roster, go }) {
@@ -925,6 +1120,7 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
             const pct = (planInfo.perCycle && rem !== null) ? (rem / planInfo.perCycle) * 100 : 100;
             const mastery = Object.values(c.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
             const low = rem !== null && rem <= 2;
+            const expiry = renewalDate(c);
             return (
               <button key={c.id} onClick={() => onOpen(c.id)} className="da-clientcard" style={clientCard}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -948,6 +1144,11 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
                     </span>
                   </div>
                   <Bar pct={pct} danger={low} />
+                  {expiry && (
+                    <div style={{ fontSize: 11, color: c.freezeStart ? "#9a9a98" : (low ? "#e23b3b" : "#9a9a98"), marginTop: 5 }}>
+                      {c.freezeStart ? "Frozen — clock paused" : `Expires ${expiry}`}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 12 }}>
@@ -1103,7 +1304,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
                 <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 6 }}>
                   {isFrozen
                     ? `Frozen since ${client.freezeStart} — clock paused.`
-                    : (renew ? `Renews ${renew}` : "")}
+                    : (renew ? `Expires / renews ${renew}` : "")}
                 </div>
 
                 <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
