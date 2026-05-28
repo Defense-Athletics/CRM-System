@@ -93,8 +93,7 @@ const PLANS = {
 const PLAN_TYPES = Object.keys(PLANS);
 const CYCLE_WEEKS = 4; // a monthly cycle = 4 weeks of sessions
 
-// Weekly class schedule (Adult Group Classes). day: 0=Sun … 6=Sat.
-// Edit this list to add kids' / private classes later.
+// Weekly class schedule. day: 0=Sun … 6=Sat. Edit this list to change classes.
 const CLASS_SCHEDULE = [
   { day: 1, time: "09:00", name: "Adult Group" },
   { day: 2, time: "09:00", name: "Adult Group" },
@@ -106,6 +105,14 @@ const CLASS_SCHEDULE = [
   { day: 6, time: "09:00", name: "Adult Group" },
   { day: 6, time: "10:15", name: "Adult Group" },
   { day: 0, time: "09:00", name: "Adult Group" },
+  // Outdoor Kids Group A (5–9 yrs) — Mon/Wed/Fri 17:30
+  { day: 1, time: "17:30", name: "Kids A (5-9)" },
+  { day: 3, time: "17:30", name: "Kids A (5-9)" },
+  { day: 5, time: "17:30", name: "Kids A (5-9)" },
+  // Outdoor Kids Group B (10–15 yrs) — Mon/Wed/Fri 18:30
+  { day: 1, time: "18:30", name: "Kids B (10-15)" },
+  { day: 3, time: "18:30", name: "Kids B (10-15)" },
+  { day: 5, time: "18:30", name: "Kids B (10-15)" },
 ];
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -274,6 +281,9 @@ function newClient(over = {}) {
     name: "",
     phone: "",
     email: "",
+    dob: "",                 // "YYYY-MM-DD"; age is derived from this
+    guardianName: "",        // required if under 16
+    guardianPhone: "",       // required if under 16
     level: "Beginner",
     plan: "2x / week",
     cycleStart: todayStr(),   // current monthly cycle start
@@ -288,6 +298,19 @@ function newClient(over = {}) {
     ...over,
   };
 }
+
+// Age in whole years from a "YYYY-MM-DD" dob, or null if not set.
+function ageFromDob(dob) {
+  if (!dob) return null;
+  const b = new Date(dob + "T00:00:00");
+  if (isNaN(b)) return null;
+  const now = new Date();
+  let age = now.getFullYear() - b.getFullYear();
+  const m = now.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
+  return age;
+}
+const isMinor = (client) => { const a = ageFromDob(client.dob); return a !== null && a < 16; };
 
 // Standard PAR-Q (Physical Activity Readiness Questionnaire) questions.
 const PARQ_QUESTIONS = [
@@ -480,22 +503,36 @@ function Gate({ onUnlock }) {
 // ============================================================
 function ParqDialog({ onCancel, onComplete }) {
   const isMobile = useIsMobile();
+  const [name, setName] = useState("");
+  const [dob, setDob] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
   const [answers, setAnswers] = useState({});       // index -> "yes" | "no"
   const [clientAck, setClientAck] = useState(false);
   const [coachAck, setCoachAck] = useState(false);
 
+  const age = ageFromDob(dob);
+  const minor = age !== null && age < 16;
+  const guardianOk = !minor || (guardianName.trim() && guardianPhone.trim());
+
   const allAnswered = PARQ_QUESTIONS.every((_, i) => answers[i] === "yes" || answers[i] === "no");
   const anyYes = PARQ_QUESTIONS.some((_, i) => answers[i] === "yes");
-  const ready = allAnswered && clientAck && coachAck;
+  const ready = name.trim() && dob && allAnswered && clientAck && coachAck && guardianOk;
 
   function submit() {
     if (!ready) return;
     onComplete({
-      date: todayStr(),
-      answers: PARQ_QUESTIONS.map((q, i) => ({ q, a: answers[i] })),
-      flagged: anyYes,
-      clientAck: true,
-      coachAck: true,
+      name: name.trim(),
+      dob,
+      guardianName: minor ? guardianName.trim() : "",
+      guardianPhone: minor ? guardianPhone.trim() : "",
+      parq: {
+        date: todayStr(),
+        answers: PARQ_QUESTIONS.map((q, i) => ({ q, a: answers[i] })),
+        flagged: anyYes,
+        clientAck: true,
+        coachAck: true,
+      },
     });
   }
 
@@ -518,6 +555,45 @@ function ParqDialog({ onCancel, onComplete }) {
         </div>
         <div style={{ fontSize: isMobile ? 11 : 12.5, color: "#9a9a98", marginBottom: 12, ...wrapText }}>
           Physical Activity Readiness Questionnaire — complete with every new client before training.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+          <div>
+            <div style={{ ...fieldLabel, marginBottom: 4 }}>Full name</div>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Client name"
+              style={{ ...search, width: "100%", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <div style={{ ...fieldLabel, marginBottom: 4 }}>Date of birth</div>
+            <input type="date" value={dob} onChange={(e) => setDob(e.target.value)}
+              style={{ ...search, width: "100%", boxSizing: "border-box" }} />
+            {age !== null && (
+              <div style={{ fontSize: 11.5, color: minor ? "#e23b3b" : "#9a9a98", marginTop: 4 }}>
+                Age: {age}{minor ? " — under 16, guardian details required" : ""}
+              </div>
+            )}
+          </div>
+          {minor && (
+            <div style={{ background: "#1f1f21", border: "1.5px solid #d4af37", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: ".06em", color: "#d4af37", textTransform: "uppercase" }}>
+                Parent / Guardian (required)
+              </div>
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>Guardian name</div>
+                <input value={guardianName} onChange={(e) => setGuardianName(e.target.value)} placeholder="Parent / legal guardian"
+                  style={{ ...search, width: "100%", boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>Guardian phone</div>
+                <input value={guardianPhone} onChange={(e) => setGuardianPhone(e.target.value)} placeholder="+971 …"
+                  style={{ ...search, width: "100%", boxSizing: "border-box" }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", color: "#d4af37", fontWeight: 600, marginBottom: 4 }}>
+          Health Questionnaire
         </div>
 
         {PARQ_QUESTIONS.map((q, i) => (
@@ -567,7 +643,11 @@ function ParqDialog({ onCancel, onComplete }) {
           <button onClick={onCancel} style={ghostBtn}>Cancel</button>
           {!ready && (
             <span style={{ fontSize: 11, color: "#9a9a98", marginLeft: isMobile ? 0 : "auto", ...wrapText }}>
-              {!allAnswered ? "Answer all questions" : "Both boxes must be ticked"}
+              {!name.trim() ? "Enter the client's name"
+                : !dob ? "Enter date of birth"
+                : !guardianOk ? "Guardian name & phone required"
+                : !allAnswered ? "Answer all questions"
+                : "Both boxes must be ticked"}
             </span>
           )}
         </div>
@@ -644,8 +724,14 @@ function App() {
     // Require PAR-Q completion before the client is created.
     setShowParq(true);
   }
-  function completeAddClient(parq) {
-    const c = newClient({ name: "New Client", parq });
+  function completeAddClient(data) {
+    const c = newClient({
+      name: data.name,
+      dob: data.dob,
+      guardianName: data.guardianName,
+      guardianPhone: data.guardianPhone,
+      parq: data.parq,
+    });
     setRoster((r) => [c, ...r]);
     dbUpsertClient(c);
     setShowParq(false);
@@ -1511,6 +1597,25 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
           <Card title="Details">
             <Field label="Phone" editing={editing} value={client.phone} onChange={(v) => onChange({ phone: v })} />
             <Field label="Email" editing={editing} value={client.email} onChange={(v) => onChange({ email: v })} />
+            <div style={fieldRow}>
+              <span style={fieldLabel}>Date of birth</span>
+              {editing ? (
+                <input type="date" value={client.dob || ""} onChange={(e) => onChange({ dob: e.target.value })} style={{ ...search, width: 160 }} />
+              ) : (
+                <span style={{ fontSize: 14 }}>
+                  {client.dob ? `${client.dob} (age ${ageFromDob(client.dob)})` : "—"}
+                </span>
+              )}
+            </div>
+            {isMinor(client) && (
+              <>
+                <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 11, letterSpacing: ".06em", color: "#d4af37", textTransform: "uppercase", fontWeight: 600, marginTop: 10, marginBottom: 2 }}>
+                  Parent / Guardian
+                </div>
+                <Field label="Guardian name" editing={editing} value={client.guardianName} onChange={(v) => onChange({ guardianName: v })} />
+                <Field label="Guardian phone" editing={editing} value={client.guardianPhone} onChange={(v) => onChange({ guardianPhone: v })} />
+              </>
+            )}
             <div style={fieldRow}>
               <span style={fieldLabel}>Level</span>
               {editing ? (
