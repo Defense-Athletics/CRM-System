@@ -41,6 +41,8 @@ const { useState, useEffect, useMemo } = React;
 const SUPABASE_URL = "https://pupijrzphlbczzopbvav.supabase.co";
 const SUPABASE_KEY = "sb_publishable_-8Pgcjx5SlMqOQVyeUcY2Q_cdbfcq2P";
 const APP_PASSWORD = "DefenseAthleticsDubai1!";
+// Renewal payment link sent to expiring clients (edit to your Ziina link).
+const RENEWAL_LINK = "https://ziina.com/pay/your-renewal-link";
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -881,6 +883,7 @@ function OneToOnesView() {
   const [bookings, setBookings] = useState(null); // array | null while loading
   const [editId, setEditId] = useState(null);     // id being edited, or "new"
   const [form, setForm] = useState({ date: todayStr(), time: "12:00", with_who: "", note: "" });
+  const [justBooked, setJustBooked] = useState(null); // { with_who, date, time } after a new booking
   const today = todayStr();
   const now = new Date();
 
@@ -904,8 +907,9 @@ function OneToOnesView() {
   }
   function save() {
     if (!form.with_who.trim()) return;
+    const isNew = editId === "new";
     const b = {
-      id: editId === "new" ? Math.random().toString(36).slice(2, 9) : editId,
+      id: isNew ? Math.random().toString(36).slice(2, 9) : editId,
       date: form.date, time: form.time, with_who: form.with_who.trim(), note: form.note.trim(),
     };
     // optimistic update
@@ -915,6 +919,7 @@ function OneToOnesView() {
     });
     dbSaveOneToOne(b).then(refresh);
     setEditId(null);
+    if (isNew) setJustBooked({ with_who: b.with_who, date: b.date, time: b.time });
   }
   function remove(id) {
     setBookings((bs) => (bs || []).filter((x) => x.id !== id));
@@ -941,6 +946,26 @@ function OneToOnesView() {
       <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 600, color: "#9a9a98", letterSpacing: ".04em", marginBottom: 14 }}>
         Week of {rangeLabel}
       </div>
+
+      {justBooked && (
+        <div style={{
+          background: "#2a2410", border: "1.5px solid #d4af37", borderRadius: 12,
+          padding: "14px 16px", marginBottom: 16, display: "flex", alignItems: "center",
+          gap: 12, flexWrap: "wrap",
+        }}>
+          <span style={{ fontSize: 22 }}>💳</span>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: "#d4af37", letterSpacing: ".03em" }}>
+              SEND PAYMENT LINK — 250 AED
+            </div>
+            <div style={{ fontSize: 13, color: "#f2f2f0", marginTop: 2 }}>
+              1-1 booked with <strong>{justBooked.with_who}</strong> on {justBooked.date} at {justBooked.time}.
+              Send them a Ziina payment link for <strong>250 AED</strong> to confirm the session.
+            </div>
+          </div>
+          <button onClick={() => setJustBooked(null)} style={ghostBtn}>Got it</button>
+        </div>
+      )}
 
       {bookings === null ? (
         <Empty>Loading 1-1 sessions…</Empty>
@@ -1050,6 +1075,27 @@ function OneToOnesView() {
 // ============================================================
 //  DASHBOARD
 // ============================================================
+function CopyMessageButton({ text }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallback());
+    } else { fallback(); }
+    function fallback() {
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  }
+  return (
+    <button onClick={copy} style={{ ...ghostBtn, fontSize: 12, padding: "7px 12px", width: "100%" }}>
+      {copied ? "✓ Copied — paste into WhatsApp" : "Copy renewal message"}
+    </button>
+  );
+}
+
 function Dashboard({ roster, go, isMobile }) {
   const today = todayStr();
   const total = roster.length;
@@ -1095,16 +1141,26 @@ function Dashboard({ roster, go, isMobile }) {
           ) : (
             expiring.map((c) => {
               const r = sessionsRemaining(c, today);
+              const expiryDate = renewalDate(c);
+              const msg =
+                `Dear ${c.name}, thank you for supporting and being part of the Defense Athletics Family. ` +
+                `I just wanted to inform you that your current package of ${c.plan} is expiring (${expiryDate}). ` +
+                `Please use this link to renew your current package or if you want to upgrade, please let me know.\n\n` +
+                `${RENEWAL_LINK}\n\n` +
+                `Have a great day`;
               return (
-                <button key={c.id} onClick={() => go(c.id)} className="da-attention" style={attentionRow}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{c.freezeStart ? " · frozen" : ""}</div>
+                <div key={c.id} style={{ ...attentionRow, flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={() => go(c.id)} style={{ background: "transparent", border: "none", textAlign: "left", cursor: "pointer", color: "#f2f2f0", padding: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{c.freezeStart ? " · frozen" : ""} · expires {expiryDate}</div>
+                    </button>
+                    <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: r <= 0 ? "#e23b3b" : "#d4af37" }}>
+                      {r <= 0 ? "RENEW NOW" : `${r} left`}
+                    </span>
                   </div>
-                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: r <= 0 ? "#e23b3b" : "#d4af37" }}>
-                    {r <= 0 ? "RENEW NOW" : `${r} left`}
-                  </span>
-                </button>
+                  <CopyMessageButton text={msg} />
+                </div>
               );
             })
           )}
