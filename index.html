@@ -320,7 +320,7 @@ function newClient(over = {}) {
     name: "",
     phone: "",
     email: "",
-    dob: "",                 // "YYYY-MM-DD"; age is derived from this
+    age: "",                 // whole-number age; under 16 requires a guardian
     guardianName: "",        // required if under 16
     guardianPhone: "",       // required if under 16
     level: "Beginner",
@@ -339,18 +339,11 @@ function newClient(over = {}) {
   };
 }
 
-// Age in whole years from a "YYYY-MM-DD" dob, or null if not set.
-function ageFromDob(dob) {
-  if (!dob) return null;
-  const b = new Date(dob + "T00:00:00");
-  if (isNaN(b)) return null;
-  const now = new Date();
-  let age = now.getFullYear() - b.getFullYear();
-  const m = now.getMonth() - b.getMonth();
-  if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
-  return age;
-}
-const isMinor = (client) => { const a = ageFromDob(client.dob); return a !== null && a < 16; };
+// True when the client is a minor (under 16) based on their entered age.
+const isMinor = (client) => {
+  const a = parseInt(client.age, 10);
+  return !isNaN(a) && a < 16;
+};
 
 // Standard PAR-Q (Physical Activity Readiness Questionnaire) questions.
 const PARQ_QUESTIONS = [
@@ -544,26 +537,27 @@ function Gate({ onUnlock }) {
 function ParqDialog({ onCancel, onComplete }) {
   const isMobile = useIsMobile();
   const [name, setName] = useState("");
-  const [dob, setDob] = useState("");
+  const [ageStr, setAgeStr] = useState("");
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [answers, setAnswers] = useState({});       // index -> "yes" | "no"
   const [clientAck, setClientAck] = useState(false);
   const [coachAck, setCoachAck] = useState(false);
 
-  const age = ageFromDob(dob);
-  const minor = age !== null && age < 16;
+  const age = ageStr === "" ? null : parseInt(ageStr, 10);
+  const ageValid = age !== null && !isNaN(age) && age > 0 && age < 120;
+  const minor = ageValid && age < 16;
   const guardianOk = !minor || (guardianName.trim() && guardianPhone.trim());
 
   const allAnswered = PARQ_QUESTIONS.every((_, i) => answers[i] === "yes" || answers[i] === "no");
   const anyYes = PARQ_QUESTIONS.some((_, i) => answers[i] === "yes");
-  const ready = name.trim() && dob && allAnswered && clientAck && coachAck && guardianOk;
+  const ready = name.trim() && ageValid && allAnswered && clientAck && coachAck && guardianOk;
 
   function submit() {
     if (!ready) return;
     onComplete({
       name: name.trim(),
-      dob,
+      age: String(age),
       guardianName: minor ? guardianName.trim() : "",
       guardianPhone: minor ? guardianPhone.trim() : "",
       parq: {
@@ -604,12 +598,13 @@ function ParqDialog({ onCancel, onComplete }) {
               style={{ ...search, width: "100%", boxSizing: "border-box" }} />
           </div>
           <div>
-            <div style={{ ...fieldLabel, marginBottom: 4 }}>Date of birth</div>
-            <input type="date" value={dob} onChange={(e) => setDob(e.target.value)}
+            <div style={{ ...fieldLabel, marginBottom: 4 }}>Age</div>
+            <input type="number" min="1" max="119" inputMode="numeric" value={ageStr}
+              onChange={(e) => setAgeStr(e.target.value)} placeholder="e.g. 12"
               style={{ ...search, width: "100%", boxSizing: "border-box" }} />
-            {age !== null && (
-              <div style={{ fontSize: 11.5, color: minor ? "#e23b3b" : "#9a9a98", marginTop: 4 }}>
-                Age: {age}{minor ? " — under 16, guardian details required" : ""}
+            {ageValid && minor && (
+              <div style={{ fontSize: 11.5, color: "#e23b3b", marginTop: 4 }}>
+                Under 16 — guardian details required.
               </div>
             )}
           </div>
@@ -684,7 +679,7 @@ function ParqDialog({ onCancel, onComplete }) {
           {!ready && (
             <span style={{ fontSize: 11, color: "#9a9a98", marginLeft: isMobile ? 0 : "auto", ...wrapText }}>
               {!name.trim() ? "Enter the client's name"
-                : !dob ? "Enter date of birth"
+                : !ageValid ? "Enter a valid age"
                 : !guardianOk ? "Guardian name & phone required"
                 : !allAnswered ? "Answer all questions"
                 : "Both boxes must be ticked"}
@@ -767,7 +762,7 @@ function App() {
   function completeAddClient(data) {
     const c = newClient({
       name: data.name,
-      dob: data.dob,
+      age: data.age,
       guardianName: data.guardianName,
       guardianPhone: data.guardianPhone,
       parq: data.parq,
@@ -1641,12 +1636,12 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
             <Field label="Phone" editing={editing} value={client.phone} onChange={(v) => onChange({ phone: v })} />
             <Field label="Email" editing={editing} value={client.email} onChange={(v) => onChange({ email: v })} />
             <div style={fieldRow}>
-              <span style={fieldLabel}>Date of birth</span>
+              <span style={fieldLabel}>Age</span>
               {editing ? (
-                <input type="date" value={client.dob || ""} onChange={(e) => onChange({ dob: e.target.value })} style={{ ...search, width: 160 }} />
+                <input type="number" min="1" max="119" value={client.age || ""} onChange={(e) => onChange({ age: e.target.value })} style={{ ...search, width: 80 }} />
               ) : (
                 <span style={{ fontSize: 14 }}>
-                  {client.dob ? `${client.dob} (age ${ageFromDob(client.dob)})` : "—"}
+                  {client.age ? `${client.age}${isMinor(client) ? " (under 16)" : ""}` : "—"}
                 </span>
               )}
             </div>
