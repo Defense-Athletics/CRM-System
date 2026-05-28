@@ -282,11 +282,28 @@ function newClient(over = {}) {
     attended: 0,             // sessions actually attended this cycle (from register)
     joined: todayStr(),
     notes: "",
+    parq: null,              // { date, clientAck, coachAck, answers: {q1..q7}, flagged }
     skills: Object.fromEntries(SKILL_AREAS.map((s) => [s, 0])),
     log: [],
     ...over,
   };
 }
+
+// Standard PAR-Q (Physical Activity Readiness Questionnaire) questions.
+const PARQ_QUESTIONS = [
+  "Has your doctor ever said that you have a heart condition and that you should only do physical activity recommended by a doctor?",
+  "Do you feel pain in your chest when you do physical activity?",
+  "In the past month, have you had chest pain when you were not doing physical activity?",
+  "Do you lose your balance because of dizziness, or do you ever lose consciousness?",
+  "Do you have a bone or joint problem that could be made worse by a change in your physical activity?",
+  "Is your doctor currently prescribing drugs for your blood pressure or heart condition?",
+  "Do you know of any other reason why you should not do physical activity?",
+];
+const PARQ_WAIVER =
+  "I confirm that the information I have provided is accurate. I understand the risks associated with " +
+  "physical training and participate voluntarily and at my own risk. I release Defence & Athletics Club, " +
+  "its coaches and staff from liability for any injury, loss or damage sustained during training, to the " +
+  "fullest extent permitted by law.";
 
 const SEED = [
   newClient({
@@ -459,6 +476,101 @@ function Gate({ onUnlock }) {
 }
 
 // ============================================================
+//  PAR-Q DIALOG (new client health questionnaire + waiver)
+// ============================================================
+function ParqDialog({ onCancel, onComplete }) {
+  const [answers, setAnswers] = useState({});       // index -> "yes" | "no"
+  const [clientAck, setClientAck] = useState(false);
+  const [coachAck, setCoachAck] = useState(false);
+
+  const allAnswered = PARQ_QUESTIONS.every((_, i) => answers[i] === "yes" || answers[i] === "no");
+  const anyYes = PARQ_QUESTIONS.some((_, i) => answers[i] === "yes");
+  const ready = allAnswered && clientAck && coachAck;
+
+  function submit() {
+    if (!ready) return;
+    onComplete({
+      date: todayStr(),
+      answers: PARQ_QUESTIONS.map((q, i) => ({ q, a: answers[i] })),
+      flagged: anyYes,
+      clientAck: true,
+      coachAck: true,
+    });
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "grid", placeItems: "center", zIndex: 60, padding: 16, overflowY: "auto" }}
+      onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: "#161617", border: "1px solid #2c2c2e", borderRadius: 16,
+        padding: 24, width: 560, maxWidth: "100%", maxHeight: "90vh", overflowY: "auto", margin: "auto",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+          <Logo size={36} />
+          <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 19, color: "#d4af37", letterSpacing: ".03em" }}>
+            PAR-Q &amp; WAIVER
+          </div>
+        </div>
+        <div style={{ fontSize: 12.5, color: "#9a9a98", marginBottom: 16 }}>
+          Physical Activity Readiness Questionnaire — to be completed with every new client before training.
+        </div>
+
+        {PARQ_QUESTIONS.map((q, i) => (
+          <div key={i} style={{ padding: "10px 0", borderBottom: "1px solid #2c2c2e" }}>
+            <div style={{ fontSize: 13.5, marginBottom: 8 }}><strong style={{ color: "#d4af37" }}>{i + 1}.</strong> {q}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {["no", "yes"].map((opt) => (
+                <button key={opt} onClick={() => setAnswers({ ...answers, [i]: opt })}
+                  style={{
+                    flex: 1, padding: "7px 0", borderRadius: 7, cursor: "pointer",
+                    fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 12.5, letterSpacing: ".06em",
+                    textTransform: "uppercase",
+                    border: `1.5px solid ${answers[i] === opt ? (opt === "yes" ? "#e23b3b" : "#2e9b54") : "#4a4a4c"}`,
+                    background: answers[i] === opt ? (opt === "yes" ? "#e23b3b" : "#2e9b54") : "transparent",
+                    color: answers[i] === opt ? "#fff" : "#9a9a98",
+                  }}>
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {anyYes && (
+          <div style={{ background: "#2a1414", border: "1.5px solid #e23b3b", borderRadius: 10, padding: "12px 14px", marginTop: 14, fontSize: 12.5, color: "#f2d2d2" }}>
+            ⚠ One or more answers is “Yes”. Advise the client to consult a doctor before starting or continuing
+            physical activity. Proceed only with appropriate caution and modifications.
+          </div>
+        )}
+
+        <div style={{ background: "#1f1f21", borderRadius: 10, padding: "12px 14px", marginTop: 14, fontSize: 12, color: "#cfcfcd", lineHeight: 1.5 }}>
+          {PARQ_WAIVER}
+        </div>
+
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 16, cursor: "pointer" }}>
+          <input type="checkbox" checked={clientAck} onChange={(e) => setClientAck(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, accentColor: "#d4af37" }} />
+          <span style={{ fontSize: 13 }}>The <strong>client</strong> confirms the answers above are accurate and agrees to the waiver.</span>
+        </label>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={coachAck} onChange={(e) => setCoachAck(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, accentColor: "#d4af37" }} />
+          <span style={{ fontSize: 13 }}>The <strong>coach</strong> confirms they have explained the PAR-Q and waiver to the client.</span>
+        </label>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 20, alignItems: "center" }}>
+          <button onClick={submit} style={{ ...primaryBtn, opacity: ready ? 1 : 0.45 }}>Create Client</button>
+          <button onClick={onCancel} style={ghostBtn}>Cancel</button>
+          {!ready && (
+            <span style={{ fontSize: 11.5, color: "#9a9a98", marginLeft: "auto" }}>
+              {!allAnswered ? "Answer all questions" : "Both boxes must be ticked"}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 //  MAIN APP
 // ============================================================
 function App() {
@@ -473,6 +585,7 @@ function App() {
   const [filterLevel, setFilterLevel] = useState("All");
   const [editing, setEditing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [showParq, setShowParq] = useState(false);
 
   // Initial load from the shared database (after login)
   useEffect(() => {
@@ -522,9 +635,14 @@ function App() {
     });
   }
   function addClient() {
-    const c = newClient({ name: "New Client" });
+    // Require PAR-Q completion before the client is created.
+    setShowParq(true);
+  }
+  function completeAddClient(parq) {
+    const c = newClient({ name: "New Client", parq });
     setRoster((r) => [c, ...r]);
     dbUpsertClient(c);
+    setShowParq(false);
     setActiveId(c.id);
     setView("profile");
     setEditing(true);
@@ -630,12 +748,19 @@ function App() {
             }}
           />
         )}
-        {view === "oneToOnes" && <OneToOnesView />}
+        {view === "oneToOnes" && <OneToOnesView roster={roster} />}
       </main>
 
       <footer style={footer}>
         {syncing ? "Saving…" : "Saved to shared database"} · {roster.length} client{roster.length !== 1 ? "s" : ""} on roster · live across all devices
       </footer>
+
+      {showParq && (
+        <ParqDialog
+          onCancel={() => setShowParq(false)}
+          onComplete={(parq) => completeAddClient(parq)}
+        />
+      )}
     </div>
   );
 }
@@ -878,7 +1003,7 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
 // ============================================================
 //  1-1 SESSIONS  (dated weekly view, free-text bookings)
 // ============================================================
-function OneToOnesView() {
+function OneToOnesView({ roster }) {
   const [anchor, setAnchor] = useState(() => startOfWeek(new Date()));
   const [bookings, setBookings] = useState(null); // array | null while loading
   const [editId, setEditId] = useState(null);     // id being edited, or "new"
@@ -1069,10 +1194,20 @@ function OneToOnesView() {
                 <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ ...search, width: "100%" }} />
               </div>
               <div>
-                <div style={{ ...fieldLabel, marginBottom: 4 }}>With (name)</div>
-                <input value={form.with_who} autoFocus placeholder="e.g. James / coach + client"
+                <div style={{ ...fieldLabel, marginBottom: 4 }}>Client</div>
+                <select value={form.with_who} autoFocus
                   onChange={(e) => setForm({ ...form, with_who: e.target.value })}
-                  onKeyDown={(e) => e.key === "Enter" && save()} style={{ ...search, width: "100%" }} />
+                  style={{ ...select, width: "100%" }}>
+                  <option value="">— Select a client —</option>
+                  {[...roster].sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+                {roster.length === 0 && (
+                  <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 4 }}>
+                    No clients yet — add one on the Clients tab first.
+                  </div>
+                )}
               </div>
               <div>
                 <div style={{ ...fieldLabel, marginBottom: 4 }}>Note (optional)</div>
@@ -1455,6 +1590,29 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
           <Card title="Coach Notes">
             <textarea value={client.notes} onChange={(e) => onChange({ notes: e.target.value })}
               placeholder="General notes about this client…" style={textarea} />
+          </Card>
+
+          <Card title="PAR-Q & Waiver">
+            {client.parq ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: "#2e9b54" }}>✓ COMPLETED</span>
+                  <span style={{ fontSize: 12, color: "#9a9a98" }}>{client.parq.date}</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: "#9a9a98", marginTop: 8 }}>
+                  Client acknowledged: {client.parq.clientAck ? "Yes" : "No"} · Coach explained: {client.parq.coachAck ? "Yes" : "No"}
+                </div>
+                {client.parq.flagged && (
+                  <div style={{ background: "#2a1414", border: "1.5px solid #e23b3b", borderRadius: 8, padding: "8px 10px", marginTop: 10, fontSize: 12, color: "#f2d2d2" }}>
+                    ⚠ One or more health questions answered “Yes” — train with caution.
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: 12.5, color: "#9a9a98" }}>
+                No PAR-Q on record (client added before this was introduced).
+              </div>
+            )}
           </Card>
         </div>
 
