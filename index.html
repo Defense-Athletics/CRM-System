@@ -502,13 +502,13 @@ function ParqDialog({ onCancel, onComplete }) {
   const wrapText = { wordBreak: "break-word", overflowWrap: "anywhere" };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", justifyContent: "center", alignItems: "flex-start", zIndex: 60, padding: isMobile ? 10 : 24, overflowY: "auto" }}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", justifyContent: "center", alignItems: "flex-start", zIndex: 60, padding: isMobile ? 10 : 24, overflowY: "auto", WebkitOverflowScrolling: "touch" }}
       onClick={onCancel}>
       <div onClick={(e) => e.stopPropagation()} style={{
         boxSizing: "border-box",
         background: "#161617", border: "1px solid #2c2c2e", borderRadius: 16,
         padding: isMobile ? 16 : 24, width: "100%", maxWidth: 540,
-        maxHeight: "94vh", overflowY: "auto", margin: "auto",
+        margin: "auto",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <Logo size={isMobile ? 30 : 36} />
@@ -1290,11 +1290,11 @@ function Dashboard({ roster, go, isMobile }) {
   return (
     <div>
       <SectionTitle>Overview</SectionTitle>
-      <div style={{ ...statGrid, gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)" }}>
-        <Stat big label="Active Clients" value={total} />
-        <Stat label="Frozen Memberships" value={frozenCount} />
-        <Stat label="Avg. Skill Mastery" value={`${avgSkill.toFixed(0)}%`} />
-        <Stat label="Expiring Soon" value={expiring.length} accent={expiring.length > 0} />
+      <div style={{ ...statGrid, gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))" }}>
+        <Stat big label="Active Clients" value={total} isMobile={isMobile} />
+        <Stat label="Frozen Memberships" value={frozenCount} isMobile={isMobile} />
+        <Stat label="Avg. Skill Mastery" value={`${avgSkill.toFixed(0)}%`} isMobile={isMobile} />
+        <Stat label="Expiring Soon" value={expiring.length} accent={expiring.length > 0} isMobile={isMobile} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.1fr 1fr", gap: 18, marginTop: 22 }}>
@@ -1688,11 +1688,11 @@ function SectionTitle({ children }) {
 function Card({ title, children }) {
   return <section style={card}><div style={cardTitle}>{title}</div>{children}</section>;
 }
-function Stat({ label, value, big, accent }) {
+function Stat({ label, value, big, accent, isMobile }) {
   return (
-    <div style={{ ...statCard, gridColumn: big ? "span 1" : "auto" }}>
-      <div style={{ fontSize: big ? 46 : 38, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: accent ? "#e23b3b" : "#d4af37", lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 11.5, color: "#9a9a98", letterSpacing: ".08em", textTransform: "uppercase", marginTop: 8, fontWeight: 600 }}>{label}</div>
+    <div style={{ ...statCard, minWidth: 0, padding: isMobile ? "16px 14px" : "22px 20px", gridColumn: big ? "span 1" : "auto" }}>
+      <div style={{ fontSize: isMobile ? (big ? 36 : 32) : (big ? 46 : 38), fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: accent ? "#e23b3b" : "#d4af37", lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: isMobile ? 10.5 : 11.5, color: "#9a9a98", letterSpacing: ".07em", textTransform: "uppercase", marginTop: 8, fontWeight: 600, wordBreak: "break-word" }}>{label}</div>
     </div>
   );
 }
@@ -1723,7 +1723,7 @@ const TXT = "#f2f2f0";        // primary text
 const MUTE = "#9a9a98";       // secondary text
 const FAINT = "#6e6e6c";      // tertiary text
 
-const wrap = { fontFamily: "'Inter', sans-serif", color: TXT, background: BG, minHeight: "100vh", maxWidth: 1180, margin: "0 auto" };
+const wrap = { fontFamily: "'Inter', sans-serif", color: TXT, background: BG, minHeight: "100vh", maxWidth: 1180, margin: "0 auto", overflowX: "hidden", width: "100%", boxSizing: "border-box" };
 const header = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 26px", background: "#0a0a0b", borderBottom: `2px solid ${GOLD}`, position: "sticky", top: 0, zIndex: 5 };
 const brandTitle = { fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: ".06em", color: GOLD };
 const brandSub = { fontSize: 10.5, letterSpacing: ".22em", color: MUTE, fontFamily: "'Oswald',sans-serif", marginTop: 2 };
