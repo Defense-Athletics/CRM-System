@@ -67,7 +67,15 @@ const SKILL_AREAS = [
   "Conditioning & Endurance",
 ];
 
-const PLAN_TYPES = ["Drop-in", "10 Sessions", "Monthly Unlimited", "3-Month", "Private Coaching"];
+// Membership tiers. weekles = sessions per week; perCycle = sessions per
+// monthly cycle (4 weeks); unlimited tiers don't deduct.
+const PLANS = {
+  "2x / week":  { weekly: 2, perCycle: 8,  unlimited: false },
+  "3x / week":  { weekly: 3, perCycle: 12, unlimited: false },
+  "Unlimited":  { weekly: 0, perCycle: 0,  unlimited: true  },
+};
+const PLAN_TYPES = Object.keys(PLANS);
+const CYCLE_WEEKS = 4; // a monthly cycle = 4 weeks of sessions
 
 // Weekly class schedule (Adult Group Classes). day: 0=Sun … 6=Sat.
 // Edit this list to add kids' / private classes later.
@@ -96,6 +104,58 @@ const ymd = (d) => {
   return `${y}-${m}-${day}`;
 };
 const todayStr = () => ymd(new Date());
+
+// ---- Membership engine -------------------------------------
+// A membership is modelled as:
+//   plan        : "2x / week" | "3x / week" | "Unlimited"
+//   cycleStart  : "YYYY-MM-DD" — when the current monthly cycle began
+//   frozenDays  : integer — total days currently frozen in this cycle
+//   freezeStart : "YYYY-MM-DD" | null — if currently frozen, when it began
+//   attended    : integer — sessions actually attended this cycle (from register)
+// Sessions remaining are CALCULATED live: start full, count down per full
+// week elapsed since cycleStart (excluding frozen time). No background job.
+
+const MS_DAY = 86400000;
+function daysBetween(aStr, bStr) {
+  return Math.floor((new Date(bStr + "T00:00:00") - new Date(aStr + "T00:00:00")) / MS_DAY);
+}
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return ymd(d);
+}
+
+// Effective elapsed days in the cycle, excluding frozen time (including an
+// in-progress freeze up to today).
+function effectiveElapsedDays(m, today) {
+  if (!m.cycleStart) return 0;
+  let frozen = m.frozenDays || 0;
+  if (m.freezeStart) frozen += Math.max(0, daysBetween(m.freezeStart, today));
+  const raw = Math.max(0, daysBetween(m.cycleStart, today));
+  return Math.max(0, raw - frozen);
+}
+
+// Full weeks elapsed (0..CYCLE_WEEKS), used for the count-down.
+function weeksElapsed(m, today) {
+  return Math.min(CYCLE_WEEKS, Math.floor(effectiveElapsedDays(m, today) / 7));
+}
+
+// Package sessions remaining this cycle for a deducting plan.
+function sessionsRemaining(client, today) {
+  const plan = PLANS[client.plan];
+  if (!plan || plan.unlimited) return null; // unlimited → no remaining concept
+  const used = weeksElapsed(client, today) * plan.weekly;
+  return Math.max(0, plan.perCycle - used);
+}
+
+// The cycle's renewal (end) date, pushed out by any frozen days.
+function renewalDate(client) {
+  if (!client.cycleStart) return null;
+  const base = addDays(client.cycleStart, CYCLE_WEEKS * 7);
+  let frozen = client.frozenDays || 0;
+  if (client.freezeStart) frozen += Math.max(0, daysBetween(client.freezeStart, todayStr()));
+  return addDays(base, frozen);
+}
 
 // Monday-start week containing the given date.
 function startOfWeek(date) {
@@ -179,9 +239,11 @@ function newClient(over = {}) {
     phone: "",
     email: "",
     level: "Beginner",
-    plan: "Drop-in",
-    planTotal: 1,
-    planUsed: 0,
+    plan: "2x / week",
+    cycleStart: todayStr(),   // current monthly cycle start
+    frozenDays: 0,            // total frozen days banked this cycle
+    freezeStart: null,        // set to a date string while currently frozen
+    attended: 0,             // sessions actually attended this cycle (from register)
     joined: todayStr(),
     notes: "",
     skills: Object.fromEntries(SKILL_AREAS.map((s) => [s, 0])),
@@ -196,9 +258,9 @@ const SEED = [
     phone: "+971 50 123 4567",
     email: "layla.h@email.com",
     level: "Intermediate",
-    plan: "Monthly Unlimited",
-    planTotal: 30,
-    planUsed: 18,
+    plan: "Unlimited",
+    cycleStart: "2026-05-10",
+    attended: 11,
     joined: "2025-11-02",
     notes: "Strong cardio. Working on keeping hands up after the cross.",
     skills: {
@@ -216,9 +278,9 @@ const SEED = [
     phone: "+971 55 987 6543",
     email: "omar.k@email.com",
     level: "Beginner",
-    plan: "10 Sessions",
-    planTotal: 10,
-    planUsed: 7,
+    plan: "2x / week",
+    cycleStart: "2026-05-04",   // ~3+ weeks in → low remaining
+    attended: 5,
     joined: "2026-03-15",
     notes: "New to striking. Footwork is the priority this block.",
     skills: {
@@ -233,9 +295,9 @@ const SEED = [
     phone: "+971 52 444 1212",
     email: "sara.m@email.com",
     level: "Advanced",
-    plan: "Private Coaching",
-    planTotal: 12,
-    planUsed: 3,
+    plan: "3x / week",
+    cycleStart: "2026-05-22",
+    attended: 4,
     joined: "2024-09-10",
     notes: "Competition prep. Sharpening counters and exit angles.",
     skills: {
@@ -248,9 +310,8 @@ const SEED = [
   newClient({
     name: "Calum Siddons",
     level: "Intermediate",
-    plan: "10 Sessions",
-    planTotal: 10,
-    planUsed: 0,
+    plan: "2x / week",
+    cycleStart: todayStr(),
     joined: todayStr(),
   }),
 ];
@@ -516,14 +577,12 @@ function App() {
             onCheckIn={(clientId) => {
               const c = roster.find((x) => x.id === clientId);
               if (!c) return;
-              const used = Math.min(c.planTotal, (c.planUsed || 0) + 1);
-              updateClient(clientId, { planUsed: used });
+              updateClient(clientId, { attended: (c.attended || 0) + 1 });
             }}
             onCheckOut={(clientId) => {
               const c = roster.find((x) => x.id === clientId);
               if (!c) return;
-              const used = Math.max(0, (c.planUsed || 0) - 1);
-              updateClient(clientId, { planUsed: used });
+              updateClient(clientId, { attended: Math.max(0, (c.attended || 0) - 1) });
             }}
           />
         )}
@@ -733,7 +792,7 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
         <div style={card}>
           {list.map((c) => {
             const isIn = present.includes(c.id);
-            const left = c.planTotal - c.planUsed;
+            const rem = sessionsRemaining(c, todayStr()); // null for unlimited
             return (
               <div key={c.id} style={{ ...skillRow, cursor: "pointer" }} onClick={() => toggle(c.id)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -751,8 +810,8 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.name}</div>
-                    <div style={{ fontSize: 11.5, color: left <= 2 ? "#e23b3b" : "#999" }}>
-                      {c.plan} · {left <= 0 ? "no sessions left" : `${left} left`}
+                    <div style={{ fontSize: 11.5, color: (rem !== null && rem <= 2) ? "#e23b3b" : "#999" }}>
+                      {c.plan}{rem === null ? "" : ` · ${rem <= 0 ? "needs renewal" : `${rem} left`}`}
                     </div>
                   </div>
                 </div>
@@ -775,10 +834,14 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
 //  DASHBOARD
 // ============================================================
 function Dashboard({ roster, go }) {
+  const today = todayStr();
   const total = roster.length;
   const byLevel = LEVELS.map((l) => ({ l, n: roster.filter((c) => c.level === l).length }));
-  const sessionsLeft = roster.reduce((s, c) => s + Math.max(0, c.planTotal - c.planUsed), 0);
-  const lowPlan = roster.filter((c) => c.planTotal - c.planUsed <= 2 && c.planTotal - c.planUsed >= 0);
+  // Deducting members with 2 or fewer package sessions remaining → expiring soon.
+  const expiring = roster
+    .filter((c) => { const r = sessionsRemaining(c, today); return r !== null && r <= 2; })
+    .sort((a, b) => sessionsRemaining(a, today) - sessionsRemaining(b, today));
+  const frozenCount = roster.filter((c) => c.freezeStart).length;
   const avgSkill =
     total === 0 ? 0 :
     roster.reduce((s, c) => {
@@ -791,9 +854,9 @@ function Dashboard({ roster, go }) {
       <SectionTitle>Overview</SectionTitle>
       <div style={statGrid}>
         <Stat big label="Active Clients" value={total} />
-        <Stat label="Sessions Remaining" value={sessionsLeft} />
+        <Stat label="Frozen Memberships" value={frozenCount} />
         <Stat label="Avg. Skill Mastery" value={`${avgSkill.toFixed(0)}%`} />
-        <Stat label="Plans Running Low" value={lowPlan.length} accent={lowPlan.length > 0} />
+        <Stat label="Expiring Soon" value={expiring.length} accent={expiring.length > 0} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18, marginTop: 22 }}>
@@ -809,20 +872,20 @@ function Dashboard({ roster, go }) {
           ))}
         </Card>
 
-        <Card title="Needs Attention — Plans Running Low">
-          {lowPlan.length === 0 ? (
-            <Empty>All clients have sessions remaining.</Empty>
+        <Card title="Recently Expiring — Needs Renewal">
+          {expiring.length === 0 ? (
+            <Empty>No memberships due for renewal.</Empty>
           ) : (
-            lowPlan.map((c) => {
-              const left = c.planTotal - c.planUsed;
+            expiring.map((c) => {
+              const r = sessionsRemaining(c, today);
               return (
                 <button key={c.id} onClick={() => go(c.id)} className="da-attention" style={attentionRow}>
                   <div>
                     <div style={{ fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}</div>
+                    <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{c.freezeStart ? " · frozen" : ""}</div>
                   </div>
-                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: left <= 0 ? "#e23b3b" : "#d4af37" }}>
-                    {left <= 0 ? "EXPIRED" : `${left} left`}
+                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: r <= 0 ? "#e23b3b" : "#d4af37" }}>
+                    {r <= 0 ? "RENEW NOW" : `${r} left`}
                   </span>
                 </button>
               );
@@ -857,9 +920,11 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
       ) : (
         <div style={cardGrid}>
           {list.map((c) => {
-            const left = c.planTotal - c.planUsed;
-            const pct = c.planTotal ? (c.planUsed / c.planTotal) * 100 : 0;
+            const planInfo = PLANS[c.plan] || {};
+            const rem = sessionsRemaining(c, todayStr()); // null for unlimited
+            const pct = (planInfo.perCycle && rem !== null) ? (rem / planInfo.perCycle) * 100 : 100;
             const mastery = Object.values(c.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
+            const low = rem !== null && rem <= 2;
             return (
               <button key={c.id} onClick={() => onOpen(c.id)} className="da-clientcard" style={clientCard}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -867,7 +932,7 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
                     <div style={avatar}>{initials(c.name)}</div>
                     <div style={{ textAlign: "left" }}>
                       <div style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}</div>
+                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{c.freezeStart ? " · frozen" : ""}</div>
                     </div>
                   </div>
                   <LevelBadge level={c.level} small />
@@ -875,12 +940,14 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
 
                 <div style={{ marginTop: 16 }}>
                   <div style={miniLabel}>
-                    <span>Plan usage</span>
-                    <span style={{ color: left <= 2 ? "#e23b3b" : "#9a9a98", fontWeight: 600 }}>
-                      {c.planUsed}/{c.planTotal} · {left <= 0 ? "expired" : `${left} left`}
+                    <span>{rem === null ? "Attended this cycle" : "Sessions remaining"}</span>
+                    <span style={{ color: low ? "#e23b3b" : "#9a9a98", fontWeight: 600 }}>
+                      {rem === null
+                        ? `${c.attended || 0} · unlimited`
+                        : `${rem}/${planInfo.perCycle} · ${rem <= 0 ? "renew" : `${rem} left`}`}
                     </span>
                   </div>
-                  <Bar pct={pct} danger={left <= 2} />
+                  <Bar pct={pct} danger={low} />
                 </div>
 
                 <div style={{ marginTop: 12 }}>
@@ -904,20 +971,33 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
 // ============================================================
 function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
   const [logText, setLogText] = useState("");
-  const left = client.planTotal - client.planUsed;
+  const today = todayStr();
+  const planInfo = PLANS[client.plan] || {};
+  const rem = sessionsRemaining(client, today);     // null for unlimited
+  const renew = renewalDate(client);
+  const isFrozen = !!client.freezeStart;
   const mastery = Object.values(client.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
   const [confirmDel, setConfirmDel] = useState(false);
 
   function setSkill(area, val) { onChange({ skills: { ...client.skills, [area]: val } }); }
-  function logSession(delta) {
-    const used = Math.max(0, Math.min(client.planTotal, client.planUsed + delta));
-    onChange({ planUsed: used });
-  }
   function addLog() {
     if (!logText.trim()) return;
     const entry = { date: todayStr(), text: logText.trim() };
     onChange({ log: [entry, ...client.log] });
     setLogText("");
+  }
+  function toggleFreeze() {
+    if (isFrozen) {
+      // Unfreeze: bank the frozen days into frozenDays, clear freezeStart.
+      const banked = (client.frozenDays || 0) + Math.max(0, daysBetween(client.freezeStart, today));
+      onChange({ frozenDays: banked, freezeStart: null });
+    } else {
+      onChange({ freezeStart: today });
+    }
+  }
+  function renewCycle() {
+    // Start a fresh monthly cycle today; reset frozen + attended counters.
+    onChange({ cycleStart: today, frozenDays: 0, freezeStart: null, attended: 0 });
   }
 
   return (
@@ -964,7 +1044,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
             </div>
           </Card>
 
-          <Card title="Plan Usage">
+          <Card title="Membership">
             {editing ? (
               <>
                 <div style={fieldRow}>
@@ -974,30 +1054,63 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
                   </select>
                 </div>
                 <div style={fieldRow}>
-                  <span style={fieldLabel}>Total sessions</span>
-                  <input type="number" min="0" value={client.planTotal}
-                    onChange={(e) => onChange({ planTotal: +e.target.value || 0 })} style={{ ...search, width: 80 }} />
+                  <span style={fieldLabel}>Cycle start</span>
+                  <input type="date" value={client.cycleStart || today}
+                    onChange={(e) => onChange({ cycleStart: e.target.value })} style={{ ...search, width: 160 }} />
                 </div>
                 <div style={fieldRow}>
-                  <span style={fieldLabel}>Used</span>
-                  <input type="number" min="0" value={client.planUsed}
-                    onChange={(e) => onChange({ planUsed: +e.target.value || 0 })} style={{ ...search, width: 80 }} />
+                  <span style={fieldLabel}>Attended this cycle</span>
+                  <input type="number" min="0" value={client.attended || 0}
+                    onChange={(e) => onChange({ attended: +e.target.value || 0 })} style={{ ...search, width: 80 }} />
+                </div>
+                <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 8 }}>
+                  Sessions remaining are calculated automatically from the cycle start and plan rate.
                 </div>
               </>
             ) : (
               <>
-                <div style={{ fontSize: 13, color: "#9a9a98", marginBottom: 4 }}>{client.plan}</div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif" }}>{client.planUsed}</span>
-                  <span style={{ color: "#999" }}>/ {client.planTotal} used</span>
-                  <span style={{ marginLeft: "auto", fontWeight: 700, color: left <= 2 ? "#e23b3b" : "#d4af37", fontFamily: "'Oswald',sans-serif" }}>
-                    {left <= 0 ? "EXPIRED" : `${left} LEFT`}
-                  </span>
+                <div style={{ fontSize: 13, color: "#9a9a98", marginBottom: 8 }}>
+                  {client.plan}{isFrozen ? " · FROZEN" : ""}
                 </div>
-                <Bar pct={client.planTotal ? (client.planUsed / client.planTotal) * 100 : 0} danger={left <= 2} />
-                <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                  <button onClick={() => logSession(1)} style={primaryBtn}>＋ Log session</button>
-                  <button onClick={() => logSession(-1)} style={ghostBtn}>－ Undo</button>
+
+                {rem === null ? (
+                  // Unlimited
+                  <>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: "#d4af37" }}>
+                        {client.attended || 0}
+                      </span>
+                      <span style={{ color: "#9a9a98" }}>attended this cycle</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#9a9a98" }}>Unlimited — no session deduction.</div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: rem <= 2 ? "#e23b3b" : "#d4af37" }}>{rem}</span>
+                      <span style={{ color: "#9a9a98" }}>/ {planInfo.perCycle} sessions left</span>
+                      <span style={{ marginLeft: "auto", fontWeight: 700, color: rem <= 2 ? "#e23b3b" : "#d4af37", fontFamily: "'Oswald',sans-serif" }}>
+                        {rem <= 0 ? "RENEW" : rem <= 2 ? "LOW" : ""}
+                      </span>
+                    </div>
+                    <Bar pct={planInfo.perCycle ? (rem / planInfo.perCycle) * 100 : 0} danger={rem <= 2} />
+                    <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 8 }}>
+                      Attended this cycle: <strong style={{ color: "#f2f2f0" }}>{client.attended || 0}</strong>
+                    </div>
+                  </>
+                )}
+
+                <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 6 }}>
+                  {isFrozen
+                    ? `Frozen since ${client.freezeStart} — clock paused.`
+                    : (renew ? `Renews ${renew}` : "")}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                  <button onClick={toggleFreeze} style={isFrozen ? primaryBtn : ghostBtn}>
+                    {isFrozen ? "Unfreeze" : "❄ Freeze"}
+                  </button>
+                  <button onClick={renewCycle} style={ghostBtn}>↻ Renew cycle</button>
                 </div>
               </>
             )}
