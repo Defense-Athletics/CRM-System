@@ -249,14 +249,14 @@ async function dbSaveAttendance(occ, clientIds) {
 // Each booking: { id, date ("YYYY-MM-DD"), time ("HH:MM"), with_who, note }.
 async function dbLoadOneToOnes() {
   const { data, error } = await sb
-    .from("one_to_ones").select("id, date, time, with_who, note");
+    .from("one_to_ones").select("id, date, time, with_who, note, paid");
   if (error) { console.error("1-1 load failed", error); return []; }
   return data || [];
 }
 async function dbSaveOneToOne(b) {
   const { error } = await sb.from("one_to_ones").upsert({
     id: b.id, date: b.date, time: b.time, with_who: b.with_who, note: b.note,
-    updated_at: new Date().toISOString(),
+    paid: !!b.paid, updated_at: new Date().toISOString(),
   });
   if (error) console.error("1-1 save failed", error);
 }
@@ -902,15 +902,22 @@ function OneToOnesView() {
     setEditId("new");
   }
   function openEdit(b) {
-    setForm({ date: b.date, time: b.time, with_who: b.with_who || "", note: b.note || "" });
+    setForm({ date: b.date, time: b.time, with_who: b.with_who || "", note: b.note || "", paid: !!b.paid });
     setEditId(b.id);
+  }
+  function togglePaid(b) {
+    const updated = { ...b, paid: !b.paid };
+    setBookings((bs) => (bs || []).map((x) => (x.id === b.id ? updated : x)));
+    dbSaveOneToOne(updated).then(refresh);
   }
   function save() {
     if (!form.with_who.trim()) return;
     const isNew = editId === "new";
+    const existing = (bookings || []).find((x) => x.id === editId);
     const b = {
       id: isNew ? Math.random().toString(36).slice(2, 9) : editId,
       date: form.date, time: form.time, with_who: form.with_who.trim(), note: form.note.trim(),
+      paid: isNew ? false : !!(existing && existing.paid),
     };
     // optimistic update
     setBookings((bs) => {
@@ -995,19 +1002,34 @@ function OneToOnesView() {
                     <button onClick={() => openNew(dateStr)} style={{ ...ghostBtn, fontSize: 12, opacity: 0.6 }}>+ Add</button>
                   ) : dayBookings.map((b) => {
                     const slotPast = isPast || (new Date(`${b.date}T${b.time}:00`) < now);
+                    const paid = !!b.paid;
                     return (
-                      <button key={b.id} onClick={() => openEdit(b)} className="da-clientcard"
+                      <div key={b.id} className="da-clientcard"
                         style={{
-                          display: "flex", flexDirection: "column", alignItems: "flex-start",
-                          border: `1.5px solid ${slotPast ? "#3a3a3c" : "#d4af37"}`,
-                          borderRadius: 10, background: slotPast ? "#161617" : "#1f1f21",
-                          color: slotPast ? "#9a9a98" : "#f2f2f0",
-                          padding: "8px 14px", cursor: "pointer", minWidth: 120, textAlign: "left",
+                          display: "flex", flexDirection: "column", alignItems: "stretch",
+                          border: `1.5px solid ${paid ? "#2e9b54" : (slotPast ? "#3a3a3c" : "#d4af37")}`,
+                          borderRadius: 10, background: paid ? "#13301f" : (slotPast ? "#161617" : "#1f1f21"),
+                          color: slotPast && !paid ? "#9a9a98" : "#f2f2f0",
+                          padding: "8px 12px", minWidth: 132, textAlign: "left",
                         }}>
-                        <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 17 }}>{b.time}</span>
-                        <span style={{ fontSize: 12.5, fontWeight: 600 }}>{b.with_who}</span>
-                        {b.note && <span style={{ fontSize: 10.5, color: "#9a9a98", marginTop: 2 }}>{b.note}</span>}
-                      </button>
+                        <button onClick={() => openEdit(b)}
+                          style={{ background: "transparent", border: "none", cursor: "pointer", textAlign: "left", color: "inherit", padding: 0 }}>
+                          <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 17 }}>{b.time}</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 600 }}>{b.with_who}</div>
+                          {b.note && <div style={{ fontSize: 10.5, color: "#9a9a98", marginTop: 2 }}>{b.note}</div>}
+                        </button>
+                        <button onClick={() => togglePaid(b)}
+                          style={{
+                            marginTop: 8, cursor: "pointer", borderRadius: 6,
+                            border: `1.5px solid ${paid ? "#2e9b54" : "#4a4a4c"}`,
+                            background: paid ? "#2e9b54" : "transparent",
+                            color: paid ? "#fff" : "#9a9a98",
+                            fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 11,
+                            letterSpacing: ".06em", padding: "5px 8px", textTransform: "uppercase",
+                          }}>
+                          {paid ? "✓ Paid" : "Mark paid"}
+                        </button>
+                      </div>
                     );
                   })}
                   {dayBookings.length > 0 && (
@@ -1105,6 +1127,18 @@ function Dashboard({ roster, go, isMobile }) {
     .filter((c) => { const r = sessionsRemaining(c, today); return r !== null && r <= 2; })
     .sort((a, b) => sessionsRemaining(a, today) - sessionsRemaining(b, today));
   const frozenCount = roster.filter((c) => c.freezeStart).length;
+
+  // Upcoming (today or later) 1-1 sessions that are NOT yet marked paid.
+  const [unpaid, setUnpaid] = useState([]);
+  useEffect(() => {
+    dbLoadOneToOnes().then((rows) => {
+      const up = (rows || [])
+        .filter((b) => !b.paid && b.date >= today)
+        .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      setUnpaid(up);
+    });
+  }, []);
+
   const avgSkill =
     total === 0 ? 0 :
     roster.reduce((s, c) => {
@@ -1135,7 +1169,7 @@ function Dashboard({ roster, go, isMobile }) {
           ))}
         </Card>
 
-        <Card title="Recently Expiring — Needs Renewal">
+        <Card title="Needs Action — Renewals &amp; Unpaid 1-1s">
           {expiring.length === 0 ? (
             <Empty>No memberships due for renewal.</Empty>
           ) : (
@@ -1164,6 +1198,29 @@ function Dashboard({ roster, go, isMobile }) {
               );
             })
           )}
+
+          <div style={{ borderTop: "1px solid #2c2c2e", margin: "16px 0 12px", paddingTop: 14 }}>
+            <div style={{ fontFamily: "'Oswald',sans-serif", fontSize: 12, letterSpacing: ".1em", textTransform: "uppercase", color: "#d4af37", fontWeight: 600, marginBottom: 10 }}>
+              Unpaid 1-1 Sessions
+            </div>
+            {unpaid.length === 0 ? (
+              <Empty>All upcoming 1-1s are paid.</Empty>
+            ) : (
+              unpaid.map((b) => (
+                <div key={b.id} className="da-attention" style={{ ...attentionRow, cursor: "default" }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{b.with_who}</div>
+                    <div style={{ fontSize: 12, color: "#9a9a98" }}>
+                      {b.date} · {b.time}{b.note ? ` · ${b.note}` : ""}
+                    </div>
+                  </div>
+                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: "#e23b3b" }}>
+                    UNPAID
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </Card>
       </div>
     </div>
