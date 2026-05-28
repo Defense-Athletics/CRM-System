@@ -44,6 +44,20 @@ const APP_PASSWORD = "DefenseAthleticsDubai1!";
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Responsive helper: true when the viewport is phone-width.
+function useIsMobile(breakpoint = 720) {
+  const [mobile, setMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
+  );
+  useEffect(() => {
+    const onResize = () => setMobile(window.innerWidth <= breakpoint);
+    window.addEventListener("resize", onResize);
+    onResize();
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+  return mobile;
+}
+
 // ---- Domain config -----------------------------------------
 const LEVELS = ["Beginner", "Intermediate", "Advanced"];
 
@@ -447,6 +461,7 @@ function Gate({ onUnlock }) {
 // ============================================================
 function App() {
   const [authed, setAuthed] = useState(false);
+  const isMobile = useIsMobile();
   const [roster, setRoster] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
@@ -556,28 +571,35 @@ function App() {
 
   return (
     <div style={wrap}>
-      <header style={header}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Logo />
+      <header style={{ ...header, flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", gap: isMobile ? 12 : 0, padding: isMobile ? "14px 16px" : "18px 26px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: isMobile ? "center" : "flex-start" }}>
+          <Logo size={isMobile ? 38 : 46} />
           <div>
-            <div style={brandTitle}>DEFENCE &amp; ATHLETICS</div>
+            <div style={{ ...brandTitle, fontSize: isMobile ? 16 : 18 }}>DEFENCE &amp; ATHLETICS</div>
             <div style={brandSub}>CLIENT PROGRESS CRM · DUBAI</div>
           </div>
         </div>
-        <nav style={{ display: "flex", gap: 4 }}>
+        <nav style={{
+          display: "flex", gap: 6,
+          justifyContent: isMobile ? "flex-start" : "flex-end",
+          overflowX: isMobile ? "auto" : "visible",
+          paddingBottom: isMobile ? 2 : 0,
+          WebkitOverflowScrolling: "touch",
+        }}>
           {[["dashboard", "Dashboard"], ["clients", "Clients"], ["classes", "Classes"], ["oneToOnes", "1-1 Sessions"]].map(([k, label]) => (
-            <button key={k} onClick={() => { setView(k); setActiveId(null); }} style={navBtn(view === k)}>
+            <button key={k} onClick={() => { setView(k); setActiveId(null); }}
+              style={{ ...navBtn(view === k), padding: isMobile ? "8px 13px" : "9px 18px", fontSize: isMobile ? 12 : 13, whiteSpace: "nowrap", flexShrink: 0 }}>
               {label}
             </button>
           ))}
         </nav>
       </header>
 
-      <main style={{ padding: "22px 26px 40px" }}>
-        {view === "dashboard" && <Dashboard roster={roster} go={(id) => { setActiveId(id); setView("profile"); }} />}
+      <main style={{ padding: isMobile ? "16px 14px 40px" : "22px 26px 40px" }}>
+        {view === "dashboard" && <Dashboard roster={roster} isMobile={isMobile} go={(id) => { setActiveId(id); setView("profile"); }} />}
         {view === "clients" && (
           <ClientsView
-            list={filtered} query={query} setQuery={setQuery}
+            list={filtered} query={query} setQuery={setQuery} isMobile={isMobile}
             filterLevel={filterLevel} setFilterLevel={setFilterLevel}
             onOpen={(id) => { setActiveId(id); setView("profile"); setEditing(false); }}
             onAdd={addClient}
@@ -585,7 +607,7 @@ function App() {
         )}
         {view === "profile" && active && (
           <Profile
-            client={active} editing={editing} setEditing={setEditing}
+            client={active} editing={editing} setEditing={setEditing} isMobile={isMobile}
             onChange={(patch) => updateClient(active.id, patch)}
             onBack={() => { setView("clients"); setActiveId(null); }}
             onDelete={() => deleteClient(active.id)}
@@ -1028,7 +1050,7 @@ function OneToOnesView() {
 // ============================================================
 //  DASHBOARD
 // ============================================================
-function Dashboard({ roster, go }) {
+function Dashboard({ roster, go, isMobile }) {
   const today = todayStr();
   const total = roster.length;
   const byLevel = LEVELS.map((l) => ({ l, n: roster.filter((c) => c.level === l).length }));
@@ -1047,14 +1069,14 @@ function Dashboard({ roster, go }) {
   return (
     <div>
       <SectionTitle>Overview</SectionTitle>
-      <div style={statGrid}>
+      <div style={{ ...statGrid, gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)" }}>
         <Stat big label="Active Clients" value={total} />
         <Stat label="Frozen Memberships" value={frozenCount} />
         <Stat label="Avg. Skill Mastery" value={`${avgSkill.toFixed(0)}%`} />
         <Stat label="Expiring Soon" value={expiring.length} accent={expiring.length > 0} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18, marginTop: 22 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.1fr 1fr", gap: 18, marginTop: 22 }}>
         <Card title="Level Distribution">
           {byLevel.map(({ l, n }) => (
             <div key={l} style={{ marginBottom: 14 }}>
@@ -1170,7 +1192,7 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
 // ============================================================
 //  CLIENT PROFILE
 // ============================================================
-function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
+function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMobile }) {
   const [logText, setLogText] = useState("");
   const today = todayStr();
   const planInfo = PLANS[client.plan] || {};
@@ -1230,7 +1252,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 18, marginTop: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.3fr", gap: 18, marginTop: 8 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <Card title="Details">
             <Field label="Phone" editing={editing} value={client.phone} onChange={(v) => onChange({ phone: v })} />
