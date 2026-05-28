@@ -83,15 +83,18 @@ const SKILL_AREAS = [
   "Conditioning & Endurance",
 ];
 
-// Membership tiers. weekles = sessions per week; perCycle = sessions per
-// monthly cycle (4 weeks); unlimited tiers don't deduct.
+// Membership packages. weekly = sessions/week; weeks = duration; total =
+// sessions over the package; unlimited tiers don't deduct (just expire).
 const PLANS = {
-  "2x / week":  { weekly: 2, perCycle: 8,  unlimited: false },
-  "3x / week":  { weekly: 3, perCycle: 12, unlimited: false },
-  "Unlimited":  { weekly: 0, perCycle: 0,  unlimited: true  },
+  "Adult 4wk (8 classes)":    { weekly: 2, weeks: 4,  total: 8,  unlimited: false, price: 499,  kids: false },
+  "Adult 4wk Unlimited":      { weekly: 0, weeks: 4,  total: 0,  unlimited: true,  price: 699,  kids: false },
+  "Adult 12wk (2/week)":      { weekly: 2, weeks: 12, total: 24, unlimited: false, price: 1287, kids: false },
+  "Adult 12wk Unlimited":     { weekly: 0, weeks: 12, total: 0,  unlimited: true,  price: 1797, kids: false },
+  "Kids 4wk (12 classes)":    { weekly: 3, weeks: 4,  total: 12, unlimited: false, price: 499,  kids: true  },
+  "Kids 12wk (36 classes)":   { weekly: 3, weeks: 12, total: 36, unlimited: false, price: 1287, kids: true  },
 };
 const PLAN_TYPES = Object.keys(PLANS);
-const CYCLE_WEEKS = 4; // a monthly cycle = 4 weeks of sessions
+const LOW_THRESHOLD = 3; // warn when this many sessions (or fewer) remain
 
 // Weekly class schedule. day: 0=Sun … 6=Sat. Edit this list to change classes.
 const CLASS_SCHEDULE = [
@@ -130,10 +133,10 @@ const todayStr = () => ymd(new Date());
 
 // ---- Membership engine -------------------------------------
 // A membership is modelled as:
-//   plan        : "2x / week" | "3x / week" | "Unlimited"
-//   cycleStart  : "YYYY-MM-DD" — when the current monthly cycle began
-//   frozenDays  : integer — total days currently frozen in this cycle
-//   freezeStart : "YYYY-MM-DD" | null — if currently frozen, when it began
+//   plan        : key into PLANS
+//   cycleStart  : "YYYY-MM-DD" — when the current package began
+//   frozenDays  : integer — total days banked from completed freezes
+//   freezeUntil : "YYYY-MM-DD" | null — if set & in the future, currently frozen
 //   attended    : integer — sessions actually attended this cycle (from register)
 // Sessions remaining are CALCULATED live: start full, count down per full
 // week elapsed since cycleStart (excluding frozen time). No background job.
@@ -148,36 +151,72 @@ function addDays(dateStr, n) {
   return ymd(d);
 }
 
-// Effective elapsed days in the cycle, excluding frozen time (including an
-// in-progress freeze up to today).
-function effectiveElapsedDays(m, today) {
-  if (!m.cycleStart) return 0;
-  let frozen = m.frozenDays || 0;
-  if (m.freezeStart) frozen += Math.max(0, daysBetween(m.freezeStart, today));
-  const raw = Math.max(0, daysBetween(m.cycleStart, today));
-  return Math.max(0, raw - frozen);
+// Is the client currently frozen? (freezeUntil set and today is before it.)
+function isFrozen(client) {
+  return !!client.freezeUntil && client.freezeUntil > todayStr();
 }
 
-// Full weeks elapsed (0..CYCLE_WEEKS), used for the count-down.
-function weeksElapsed(m, today) {
-  return Math.min(CYCLE_WEEKS, Math.floor(effectiveElapsedDays(m, today) / 7));
+// Total frozen days to exclude: banked completed freezes + any active freeze
+// counted from cycleStart-or-now up to today.
+function frozenDaysSoFar(client, today) {
+  let frozen = client.frozenDays || 0;
+  if (client.freezeUntil) {
+    // While frozen, days from when the freeze "started counting" until today
+    // are excluded. We approximate the active freeze as freezing from today
+    // backwards is wrong; instead we treat banked freezes via frozenDays and,
+    // for an active freeze, exclude days already elapsed under it.
+    // Simpler robust model: if currently frozen, no additional time counts
+    // until unfreeze (handled by clamping elapsed below).
+  }
+  return frozen;
 }
 
-// Package sessions remaining this cycle for a deducting plan.
+// Effective elapsed days in the cycle, excluding frozen time.
+function effectiveElapsedDays(client, today) {
+  if (!client.cycleStart) return 0;
+  const raw = Math.max(0, daysBetween(client.cycleStart, today));
+  let elapsed = raw - (client.frozenDays || 0);
+  // If currently frozen, freeze the clock at the point the freeze began:
+  // exclude all days from the freeze start (recorded as freezeFrom) to today.
+  if (isFrozen(client) && client.freezeFrom) {
+    const frozenNow = Math.max(0, daysBetween(client.freezeFrom, today));
+    elapsed -= frozenNow;
+  }
+  return Math.max(0, elapsed);
+}
+
+// Full weeks elapsed (0..plan.weeks).
+function weeksElapsed(client, today) {
+  const plan = PLANS[client.plan];
+  const cap = plan ? plan.weeks : 4;
+  return Math.min(cap, Math.floor(effectiveElapsedDays(client, today) / 7));
+}
+
+// Package sessions remaining for a deducting plan (null for unlimited).
 function sessionsRemaining(client, today) {
   const plan = PLANS[client.plan];
-  if (!plan || plan.unlimited) return null; // unlimited → no remaining concept
+  if (!plan || plan.unlimited) return null;
   const used = weeksElapsed(client, today) * plan.weekly;
-  return Math.max(0, plan.perCycle - used);
+  return Math.max(0, plan.total - used);
 }
 
-// The cycle's renewal (end) date, pushed out by any frozen days.
+// The package expiry date, pushed out by frozen time.
 function renewalDate(client) {
-  if (!client.cycleStart) return null;
-  const base = addDays(client.cycleStart, CYCLE_WEEKS * 7);
+  const plan = PLANS[client.plan];
+  if (!client.cycleStart || !plan) return null;
+  const base = addDays(client.cycleStart, plan.weeks * 7);
   let frozen = client.frozenDays || 0;
-  if (client.freezeStart) frozen += Math.max(0, daysBetween(client.freezeStart, todayStr()));
+  if (isFrozen(client) && client.freezeFrom) {
+    frozen += Math.max(0, daysBetween(client.freezeFrom, todayStr()));
+  }
   return addDays(base, frozen);
+}
+
+// Days until expiry from today (negative = already expired). For warnings.
+function daysToExpiry(client) {
+  const r = renewalDate(client);
+  if (!r) return null;
+  return daysBetween(todayStr(), r);
 }
 
 // Monday-start week containing the given date.
@@ -285,10 +324,11 @@ function newClient(over = {}) {
     guardianName: "",        // required if under 16
     guardianPhone: "",       // required if under 16
     level: "Beginner",
-    plan: "2x / week",
-    cycleStart: todayStr(),   // current monthly cycle start
-    frozenDays: 0,            // total frozen days banked this cycle
-    freezeStart: null,        // set to a date string while currently frozen
+    plan: "Adult 4wk (8 classes)",
+    cycleStart: todayStr(),   // current package start
+    frozenDays: 0,            // banked frozen days from completed freezes
+    freezeFrom: null,         // date the current freeze began
+    freezeUntil: null,        // date the current freeze ends (coach-selected)
     attended: 0,             // sessions actually attended this cycle (from register)
     joined: todayStr(),
     notes: "",
@@ -334,7 +374,7 @@ const SEED = [
     phone: "+971 50 123 4567",
     email: "layla.h@email.com",
     level: "Intermediate",
-    plan: "Unlimited",
+    plan: "Adult 4wk Unlimited",
     cycleStart: "2026-05-10",
     attended: 11,
     joined: "2025-11-02",
@@ -354,7 +394,7 @@ const SEED = [
     phone: "+971 55 987 6543",
     email: "omar.k@email.com",
     level: "Beginner",
-    plan: "2x / week",
+    plan: "Adult 4wk (8 classes)",
     cycleStart: "2026-05-04",   // ~3+ weeks in → low remaining
     attended: 5,
     joined: "2026-03-15",
@@ -371,7 +411,7 @@ const SEED = [
     phone: "+971 52 444 1212",
     email: "sara.m@email.com",
     level: "Advanced",
-    plan: "3x / week",
+    plan: "Adult 12wk (2/week)",
     cycleStart: "2026-05-22",
     attended: 4,
     joined: "2024-09-10",
@@ -386,7 +426,7 @@ const SEED = [
   newClient({
     name: "Calum Siddons",
     level: "Intermediate",
-    plan: "2x / week",
+    plan: "Adult 4wk (8 classes)",
     cycleStart: todayStr(),
     joined: todayStr(),
   }),
@@ -1072,7 +1112,7 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.name}</div>
-                    <div style={{ fontSize: 11.5, color: (rem !== null && rem <= 2) ? "#e23b3b" : "#999" }}>
+                    <div style={{ fontSize: 11.5, color: (rem !== null && rem <= LOW_THRESHOLD) ? "#e23b3b" : "#999" }}>
                       {c.plan}{rem === null ? "" : ` · ${rem <= 0 ? "needs renewal" : `${rem} left`}`}
                     </div>
                   </div>
@@ -1351,9 +1391,9 @@ function Dashboard({ roster, go, isMobile }) {
   const byLevel = LEVELS.map((l) => ({ l, n: roster.filter((c) => c.level === l).length }));
   // Deducting members with 2 or fewer package sessions remaining → expiring soon.
   const expiring = roster
-    .filter((c) => { const r = sessionsRemaining(c, today); return r !== null && r <= 2; })
+    .filter((c) => { const r = sessionsRemaining(c, today); return r !== null && r <= LOW_THRESHOLD; })
     .sort((a, b) => sessionsRemaining(a, today) - sessionsRemaining(b, today));
-  const frozenCount = roster.filter((c) => c.freezeStart).length;
+  const frozenCount = roster.filter((c) => isFrozen(c)).length;
 
   // Upcoming (today or later) 1-1 sessions that are NOT yet marked paid.
   const [unpaid, setUnpaid] = useState([]);
@@ -1414,7 +1454,7 @@ function Dashboard({ roster, go, isMobile }) {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <button onClick={() => go(c.id)} style={{ background: "transparent", border: "none", textAlign: "left", cursor: "pointer", color: "#f2f2f0", padding: 0 }}>
                       <div style={{ fontWeight: 600 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{c.freezeStart ? " · frozen" : ""} · expires {expiryDate}</div>
+                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{isFrozen(c) ? " · frozen" : ""} · expires {expiryDate}</div>
                     </button>
                     <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: r <= 0 ? "#e23b3b" : "#d4af37" }}>
                       {r <= 0 ? "RENEW NOW" : `${r} left`}
@@ -1479,9 +1519,9 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
           {list.map((c) => {
             const planInfo = PLANS[c.plan] || {};
             const rem = sessionsRemaining(c, todayStr()); // null for unlimited
-            const pct = (planInfo.perCycle && rem !== null) ? (rem / planInfo.perCycle) * 100 : 100;
+            const pct = (planInfo.total && rem !== null) ? (rem / planInfo.total) * 100 : 100;
             const mastery = Object.values(c.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
-            const low = rem !== null && rem <= 2;
+            const low = rem !== null && rem <= LOW_THRESHOLD;
             const expiry = renewalDate(c);
             return (
               <button key={c.id} onClick={() => onOpen(c.id)} className="da-clientcard" style={clientCard}>
@@ -1490,7 +1530,7 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
                     <div style={avatar}>{initials(c.name)}</div>
                     <div style={{ textAlign: "left" }}>
                       <div style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{c.freezeStart ? " · frozen" : ""}</div>
+                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}{isFrozen(c) ? " · frozen" : ""}</div>
                     </div>
                   </div>
                   <LevelBadge level={c.level} small />
@@ -1502,13 +1542,13 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
                     <span style={{ color: low ? "#e23b3b" : "#9a9a98", fontWeight: 600 }}>
                       {rem === null
                         ? `${c.attended || 0} · unlimited`
-                        : `${rem}/${planInfo.perCycle} · ${rem <= 0 ? "renew" : `${rem} left`}`}
+                        : `${rem}/${planInfo.total} · ${rem <= 0 ? "renew" : `${rem} left`}`}
                     </span>
                   </div>
                   <Bar pct={pct} danger={low} />
                   {expiry && (
-                    <div style={{ fontSize: 11, color: c.freezeStart ? "#9a9a98" : (low ? "#e23b3b" : "#9a9a98"), marginTop: 5 }}>
-                      {c.freezeStart ? "Frozen — clock paused" : `Expires ${expiry}`}
+                    <div style={{ fontSize: 11, color: isFrozen(c) ? "#9a9a98" : (low ? "#e23b3b" : "#9a9a98"), marginTop: 5 }}>
+                      {isFrozen(c) ? `Frozen until ${c.freezeUntil}` : `Expires ${expiry}`}
                     </div>
                   )}
                 </div>
@@ -1534,11 +1574,12 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
 // ============================================================
 function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMobile }) {
   const [logText, setLogText] = useState("");
+  const [freezeDate, setFreezeDate] = useState("");
   const today = todayStr();
   const planInfo = PLANS[client.plan] || {};
   const rem = sessionsRemaining(client, today);     // null for unlimited
   const renew = renewalDate(client);
-  const isFrozen = !!client.freezeStart;
+  const frozen = isFrozen(client);
   const mastery = Object.values(client.skills).reduce((a, b) => a + b, 0) / (SKILL_AREAS.length * 5) * 100;
   const [confirmDel, setConfirmDel] = useState(false);
 
@@ -1549,18 +1590,20 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
     onChange({ log: [entry, ...client.log] });
     setLogText("");
   }
-  function toggleFreeze() {
-    if (isFrozen) {
-      // Unfreeze: bank the frozen days into frozenDays, clear freezeStart.
-      const banked = (client.frozenDays || 0) + Math.max(0, daysBetween(client.freezeStart, today));
-      onChange({ frozenDays: banked, freezeStart: null });
-    } else {
-      onChange({ freezeStart: today });
-    }
+  function applyFreeze() {
+    // Coach selects the date to freeze UNTIL. Clock pauses from today until then.
+    if (!freezeDate || freezeDate <= today) return;
+    onChange({ freezeFrom: today, freezeUntil: freezeDate });
+    setFreezeDate("");
+  }
+  function endFreeze() {
+    // Unfreeze now: bank the days frozen so far into frozenDays.
+    const banked = (client.frozenDays || 0) + Math.max(0, daysBetween(client.freezeFrom || today, today));
+    onChange({ frozenDays: banked, freezeFrom: null, freezeUntil: null });
   }
   function renewCycle() {
-    // Start a fresh monthly cycle today; reset frozen + attended counters.
-    onChange({ cycleStart: today, frozenDays: 0, freezeStart: null, attended: 0 });
+    // Start a fresh package today; reset frozen + attended counters.
+    onChange({ cycleStart: today, frozenDays: 0, freezeFrom: null, freezeUntil: null, attended: 0 });
   }
 
   return (
@@ -1652,7 +1695,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
             ) : (
               <>
                 <div style={{ fontSize: 13, color: "#9a9a98", marginBottom: 8 }}>
-                  {client.plan}{isFrozen ? " · FROZEN" : ""}
+                  {client.plan}{frozen ? " · FROZEN" : ""}{planInfo.price ? ` · ${planInfo.price} AED` : ""}
                 </div>
 
                 {rem === null ? (
@@ -1664,36 +1707,48 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
                       </span>
                       <span style={{ color: "#9a9a98" }}>attended this cycle</span>
                     </div>
-                    <div style={{ fontSize: 12, color: "#9a9a98" }}>Unlimited — no session deduction.</div>
+                    <div style={{ fontSize: 12, color: "#9a9a98" }}>Unlimited — expires {renew}.</div>
                   </>
                 ) : (
                   <>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: rem <= 2 ? "#e23b3b" : "#d4af37" }}>{rem}</span>
-                      <span style={{ color: "#9a9a98" }}>/ {planInfo.perCycle} sessions left</span>
-                      <span style={{ marginLeft: "auto", fontWeight: 700, color: rem <= 2 ? "#e23b3b" : "#d4af37", fontFamily: "'Oswald',sans-serif" }}>
-                        {rem <= 0 ? "RENEW" : rem <= 2 ? "LOW" : ""}
+                      <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: rem <= LOW_THRESHOLD ? "#e23b3b" : "#d4af37" }}>{rem}</span>
+                      <span style={{ color: "#9a9a98" }}>/ {planInfo.total} sessions left</span>
+                      <span style={{ marginLeft: "auto", fontWeight: 700, color: rem <= LOW_THRESHOLD ? "#e23b3b" : "#d4af37", fontFamily: "'Oswald',sans-serif" }}>
+                        {rem <= 0 ? "EXPIRED" : rem <= LOW_THRESHOLD ? "LOW" : ""}
                       </span>
                     </div>
-                    <Bar pct={planInfo.perCycle ? (rem / planInfo.perCycle) * 100 : 0} danger={rem <= 2} />
+                    <Bar pct={planInfo.total ? (rem / planInfo.total) * 100 : 0} danger={rem <= LOW_THRESHOLD} />
                     <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 8 }}>
                       Attended this cycle: <strong style={{ color: "#f2f2f0" }}>{client.attended || 0}</strong>
                     </div>
                   </>
                 )}
 
-                <div style={{ fontSize: 11.5, color: "#9a9a98", marginTop: 6 }}>
-                  {isFrozen
-                    ? `Frozen since ${client.freezeStart} — clock paused.`
-                    : (renew ? `Expires / renews ${renew}` : "")}
+                <div style={{ fontSize: 11.5, color: frozen ? "#d4af37" : "#9a9a98", marginTop: 6 }}>
+                  {frozen
+                    ? `Frozen until ${client.freezeUntil} — clock paused.`
+                    : (renew ? `Expires ${renew}` : "")}
                 </div>
 
-                <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                  <button onClick={toggleFreeze} style={isFrozen ? primaryBtn : ghostBtn}>
-                    {isFrozen ? "Unfreeze" : "❄ Freeze"}
-                  </button>
-                  <button onClick={renewCycle} style={ghostBtn}>↻ Renew cycle</button>
-                </div>
+                {frozen ? (
+                  <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                    <button onClick={endFreeze} style={primaryBtn}>Unfreeze now</button>
+                    <button onClick={renewCycle} style={ghostBtn}>↻ Renew package</button>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, color: "#9a9a98" }}>❄ Freeze until:</span>
+                      <input type="date" value={freezeDate} min={addDays(today, 1)}
+                        onChange={(e) => setFreezeDate(e.target.value)} style={{ ...search, width: 160 }} />
+                      <button onClick={applyFreeze} style={{ ...primaryBtn, opacity: (freezeDate && freezeDate > today) ? 1 : 0.45 }}>Freeze</button>
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <button onClick={renewCycle} style={ghostBtn}>↻ Renew package</button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </Card>
