@@ -15,11 +15,13 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #e9e9ec; }
+    html, body { margin: 0; padding: 0; background: #0c0c0d; }
     #root { min-height: 100vh; }
     input, select, textarea, button { font-family: inherit; }
-    .da-clientcard:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,0,0,.08); }
-    .da-attention:hover { background: #f0f0f0 !important; }
+    input::placeholder, textarea::placeholder { color: #6e6e6c; }
+    input[type="date"] { color-scheme: dark; }
+    .da-clientcard:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,0,0,.5); border-color: #d4af37 !important; }
+    .da-attention:hover { background: #232325 !important; }
   </style>
 </head>
 <body>
@@ -46,9 +48,9 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const LEVELS = ["Beginner", "Intermediate", "Advanced"];
 
 const LEVEL_STYLE = {
-  Beginner: { ring: "#9aa0a6", fill: "#f1f2f4", text: "#3c4043" },
-  Intermediate: { ring: "#4a4a4a", fill: "#e2e3e5", text: "#1a1a1a" },
-  Advanced: { ring: "#111111", fill: "#111111", text: "#ffffff" },
+  Beginner: { ring: "#4a4a4c", fill: "#1f1f21", text: "#cfcfcd" },
+  Intermediate: { ring: "#8a6d1a", fill: "#2a2410", text: "#e8c860" },
+  Advanced: { ring: "#d4af37", fill: "#d4af37", text: "#0c0c0d" },
 };
 
 // Striking skill set
@@ -279,7 +281,7 @@ function Stars({ value, onChange, readOnly }) {
           style={{
             width: 18, height: 18, padding: 0, border: "none", background: "transparent",
             cursor: readOnly ? "default" : "pointer",
-            color: n <= value ? "#111" : "#d2d4d7", transition: "transform .12s ease",
+            color: n <= value ? "#d4af37" : "#3a3a3c", transition: "transform .12s ease",
           }}
           onMouseEnter={(e) => !readOnly && (e.currentTarget.style.transform = "scale(1.25)")}
           onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}>
@@ -294,10 +296,10 @@ function Stars({ value, onChange, readOnly }) {
 
 function Bar({ pct, danger }) {
   return (
-    <div style={{ height: 7, background: "#e7e8ea", borderRadius: 6, overflow: "hidden" }}>
+    <div style={{ height: 7, background: "#2c2c2e", borderRadius: 6, overflow: "hidden" }}>
       <div style={{
         height: "100%", width: `${Math.min(100, pct)}%`,
-        background: danger ? "#111" : "#3c4043", borderRadius: 6, transition: "width .4s ease",
+        background: danger ? "#e23b3b" : "#d4af37", borderRadius: 6, transition: "width .4s ease",
       }} />
     </div>
   );
@@ -306,13 +308,13 @@ function Bar({ pct, danger }) {
 function Logo({ size = 46 }) {
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} aria-label="Defence & Athletics">
-      <circle cx="50" cy="50" r="48" fill="#fff" stroke="#111" strokeWidth="2.4" />
-      <circle cx="50" cy="50" r="38" fill="none" stroke="#111" strokeWidth="1.6" />
-      <circle cx="8" cy="50" r="1.6" fill="#111" />
-      <circle cx="92" cy="50" r="1.6" fill="#111" />
+      <circle cx="50" cy="50" r="48" fill="none" stroke="#d4af37" strokeWidth="2.4" />
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#d4af37" strokeWidth="1.6" />
+      <circle cx="8" cy="50" r="1.6" fill="#d4af37" />
+      <circle cx="92" cy="50" r="1.6" fill="#d4af37" />
       <text x="50" y="62" textAnchor="middle"
         style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 30, letterSpacing: "1px" }}
-        fill="#111">D|A</text>
+        fill="#d4af37">D|A</text>
     </svg>
   );
 }
@@ -328,9 +330,9 @@ function Gate({ onUnlock }) {
     else { setErr(true); setPw(""); }
   }
   return (
-    <div style={{ ...wrap, display: "grid", placeItems: "center", minHeight: "100vh", background: "#f4f4f5" }}>
+    <div style={{ ...wrap, display: "grid", placeItems: "center", minHeight: "100vh", background: "#0c0c0d" }}>
       <div style={{
-        background: "#fff", border: "1px solid #e6e6e8", borderRadius: 16,
+        background: "#161617", border: "1px solid #2c2c2e", borderRadius: 16,
         padding: "40px 36px", width: 340, textAlign: "center",
         boxShadow: "0 14px 40px rgba(0,0,0,.07)",
       }}>
@@ -350,7 +352,7 @@ function Gate({ onUnlock }) {
           placeholder="Enter password"
           style={{ ...search, width: "100%", textAlign: "center", marginTop: 22, marginBottom: 6 }}
         />
-        {err && <div style={{ color: "#b00020", fontSize: 12.5, margin: "4px 0" }}>Incorrect password.</div>}
+        {err && <div style={{ color: "#e23b3b", fontSize: 12.5, margin: "4px 0" }}>Incorrect password.</div>}
         <button onClick={submit} style={{ ...primaryBtn, width: "100%", marginTop: 12, padding: "11px 16px" }}>
           Enter
         </button>
@@ -451,7 +453,7 @@ function App() {
   if (loadError) {
     return (
       <div style={{ ...wrap, display: "grid", placeItems: "center", minHeight: 400 }}>
-        <div style={{ textAlign: "center", color: "#b00020", fontFamily: "'Inter',sans-serif", maxWidth: 360, padding: 20 }}>
+        <div style={{ textAlign: "center", color: "#e23b3b", fontFamily: "'Inter',sans-serif", maxWidth: 360, padding: 20 }}>
           <Logo size={56} />
           <div style={{ marginTop: 16, fontWeight: 600 }}>{loadError}</div>
           <button onClick={() => window.location.reload()} style={{ ...primaryBtn, marginTop: 16 }}>Retry</button>
@@ -463,7 +465,7 @@ function App() {
   if (!loaded) {
     return (
       <div style={{ ...wrap, display: "grid", placeItems: "center", minHeight: 400 }}>
-        <div style={{ textAlign: "center", color: "#888", fontFamily: "'Oswald',sans-serif", letterSpacing: ".1em" }}>
+        <div style={{ textAlign: "center", color: "#9a9a98", fontFamily: "'Oswald',sans-serif", letterSpacing: ".1em" }}>
           <Logo size={56} />
           <div style={{ marginTop: 12 }}>LOADING ROSTER…</div>
         </div>
@@ -616,20 +618,20 @@ function ClassesView({ roster, onCheckIn, onCheckOut }) {
           return (
             <div key={dateStr} style={{
               display: "flex", alignItems: "center", gap: 16,
-              background: isPast ? "#f3f3f4" : "#fff",
-              border: `1px solid ${isToday ? "#111" : "#e6e6e8"}`,
+              background: isPast ? "#121213" : "#161617",
+              border: `1px solid ${isToday ? "#d4af37" : "#2c2c2e"}`,
               borderRadius: 12, padding: "14px 18px",
               opacity: isPast ? 0.85 : 1,
             }}>
               <div style={{ width: 84, flexShrink: 0 }}>
                 <div style={{
                   fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 16,
-                  letterSpacing: ".06em", color: isPast ? "#888" : "#111", textTransform: "uppercase",
+                  letterSpacing: ".06em", color: isPast ? "#6e6e6c" : "#f2f2f0", textTransform: "uppercase",
                 }}>{DAY_NAMES[d.getDay()]}</div>
                 <div style={{ fontSize: 12, color: isPast ? "#aaa" : "#999" }}>
                   {d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}
                 </div>
-                {isToday && <div style={{ fontSize: 10, fontWeight: 700, color: "#111", letterSpacing: ".08em", marginTop: 2 }}>TODAY</div>}
+                {isToday && <div style={{ fontSize: 10, fontWeight: 700, color: "#d4af37", letterSpacing: ".08em", marginTop: 2 }}>TODAY</div>}
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                 {slots.length === 0 ? (
@@ -645,14 +647,14 @@ function ClassesView({ roster, onCheckIn, onCheckOut }) {
                       className="da-clientcard"
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "center",
-                        border: `1.5px solid ${slotPast ? "#bbb" : "#111"}`,
-                        borderRadius: 10, background: slotPast ? "#ececee" : "#fff",
-                        color: slotPast ? "#888" : "#111",
+                        border: `1.5px solid ${slotPast ? "#3a3a3c" : "#d4af37"}`,
+                        borderRadius: 10, background: slotPast ? "#161617" : "#1f1f21",
+                        color: slotPast ? "#6e6e6c" : "#f2f2f0",
                         padding: "8px 16px", cursor: "pointer", minWidth: 96,
                       }}>
                       <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 19 }}>{c.time}</span>
-                      <span style={{ fontSize: 10.5, color: slotPast ? "#aaa" : "#888", textTransform: "uppercase", letterSpacing: ".06em" }}>{c.name}</span>
-                      <span style={{ fontSize: 10.5, marginTop: 3, color: slotPast ? "#999" : "#1a7f37", fontWeight: 600 }}>
+                      <span style={{ fontSize: 10.5, color: slotPast ? "#aaa" : "#9a9a98", textTransform: "uppercase", letterSpacing: ".06em" }}>{c.name}</span>
+                      <span style={{ fontSize: 10.5, marginTop: 3, color: slotPast ? "#6e6e6c" : "#d4af37", fontWeight: 600 }}>
                         {n ? `${n} attended` : "—"}
                       </span>
                     </button>
@@ -708,7 +710,7 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
           <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'Oswald',sans-serif" }}>
             {occ.time} · {occ.name}
           </div>
-          <div style={{ fontSize: 12.5, color: "#888", marginTop: 4 }}>{niceDate}</div>
+          <div style={{ fontSize: 12.5, color: "#9a9a98", marginTop: 4 }}>{niceDate}</div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 800, fontSize: 30 }}>
@@ -737,19 +739,19 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{
                     width: 24, height: 24, borderRadius: 6, flexShrink: 0,
-                    border: `2px solid ${isIn ? "#111" : "#ccc"}`,
-                    background: isIn ? "#111" : "#fff",
+                    border: `2px solid ${isIn ? "#d4af37" : "#4a4a4c"}`,
+                    background: isIn ? "#d4af37" : "transparent",
                     display: "grid", placeItems: "center",
                   }}>
                     {isIn && (
-                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" strokeWidth="3">
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#0c0c0d" strokeWidth="3">
                         <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.name}</div>
-                    <div style={{ fontSize: 11.5, color: left <= 2 ? "#b00020" : "#999" }}>
+                    <div style={{ fontSize: 11.5, color: left <= 2 ? "#e23b3b" : "#999" }}>
                       {c.plan} · {left <= 0 ? "no sessions left" : `${left} left`}
                     </div>
                   </div>
@@ -817,9 +819,9 @@ function Dashboard({ roster, go }) {
                 <button key={c.id} onClick={() => go(c.id)} className="da-attention" style={attentionRow}>
                   <div>
                     <div style={{ fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: 12, color: "#777" }}>{c.plan}</div>
+                    <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}</div>
                   </div>
-                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: left <= 0 ? "#b00020" : "#111" }}>
+                  <span style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 700, color: left <= 0 ? "#e23b3b" : "#d4af37" }}>
                     {left <= 0 ? "EXPIRED" : `${left} left`}
                   </span>
                 </button>
@@ -865,7 +867,7 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
                     <div style={avatar}>{initials(c.name)}</div>
                     <div style={{ textAlign: "left" }}>
                       <div style={{ fontWeight: 700, fontSize: 16 }}>{c.name}</div>
-                      <div style={{ fontSize: 12, color: "#777" }}>{c.plan}</div>
+                      <div style={{ fontSize: 12, color: "#9a9a98" }}>{c.plan}</div>
                     </div>
                   </div>
                   <LevelBadge level={c.level} small />
@@ -874,7 +876,7 @@ function ClientsView({ list, query, setQuery, filterLevel, setFilterLevel, onOpe
                 <div style={{ marginTop: 16 }}>
                   <div style={miniLabel}>
                     <span>Plan usage</span>
-                    <span style={{ color: left <= 2 ? "#b00020" : "#444", fontWeight: 600 }}>
+                    <span style={{ color: left <= 2 ? "#e23b3b" : "#9a9a98", fontWeight: 600 }}>
                       {c.planUsed}/{c.planTotal} · {left <= 0 ? "expired" : `${left} left`}
                     </span>
                   </div>
@@ -936,7 +938,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
             )}
             <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10 }}>
               <LevelBadge level={client.level} />
-              <span style={{ fontSize: 12, color: "#888" }}>Member since {client.joined}</span>
+              <span style={{ fontSize: 12, color: "#9a9a98" }}>Member since {client.joined}</span>
             </div>
           </div>
         </div>
@@ -984,11 +986,11 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
               </>
             ) : (
               <>
-                <div style={{ fontSize: 13, color: "#777", marginBottom: 4 }}>{client.plan}</div>
+                <div style={{ fontSize: 13, color: "#9a9a98", marginBottom: 4 }}>{client.plan}</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
                   <span style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Oswald',sans-serif" }}>{client.planUsed}</span>
                   <span style={{ color: "#999" }}>/ {client.planTotal} used</span>
-                  <span style={{ marginLeft: "auto", fontWeight: 700, color: left <= 2 ? "#b00020" : "#111", fontFamily: "'Oswald',sans-serif" }}>
+                  <span style={{ marginLeft: "auto", fontWeight: 700, color: left <= 2 ? "#e23b3b" : "#d4af37", fontFamily: "'Oswald',sans-serif" }}>
                     {left <= 0 ? "EXPIRED" : `${left} LEFT`}
                   </span>
                 </div>
@@ -1051,7 +1053,7 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete }) {
               <button onClick={() => setConfirmDel(true)} style={dangerGhost}>Remove client</button>
             ) : (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 13, color: "#b00020" }}>Permanently remove {client.name}?</span>
+                <span style={{ fontSize: 13, color: "#e23b3b" }}>Permanently remove {client.name}?</span>
                 <button onClick={onDelete} style={dangerBtn}>Yes, remove</button>
                 <button onClick={() => setConfirmDel(false)} style={ghostBtn}>Cancel</button>
               </div>
@@ -1076,8 +1078,8 @@ function Card({ title, children }) {
 function Stat({ label, value, big, accent }) {
   return (
     <div style={{ ...statCard, gridColumn: big ? "span 1" : "auto" }}>
-      <div style={{ fontSize: big ? 46 : 38, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: accent ? "#b00020" : "#111", lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 11.5, color: "#888", letterSpacing: ".08em", textTransform: "uppercase", marginTop: 8, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: big ? 46 : 38, fontWeight: 800, fontFamily: "'Oswald',sans-serif", color: accent ? "#e23b3b" : "#d4af37", lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: "#9a9a98", letterSpacing: ".08em", textTransform: "uppercase", marginTop: 8, fontWeight: 600 }}>{label}</div>
     </div>
   );
 }
@@ -1096,36 +1098,47 @@ function Empty({ children }) {
 }
 const initials = (n) => (n || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
-// ---- Styles ------------------------------------------------
-const wrap = { fontFamily: "'Inter', sans-serif", color: "#111", background: "#f4f4f5", minHeight: "100vh", maxWidth: 1180, margin: "0 auto" };
-const header = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 26px", background: "#fff", borderBottom: "2px solid #111", position: "sticky", top: 0, zIndex: 5 };
-const brandTitle = { fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: ".06em" };
-const brandSub = { fontSize: 10.5, letterSpacing: ".22em", color: "#999", fontFamily: "'Oswald',sans-serif", marginTop: 2 };
-const navBtn = (on) => ({ fontFamily: "'Oswald',sans-serif", fontWeight: 600, fontSize: 13, letterSpacing: ".08em", textTransform: "uppercase", padding: "9px 18px", cursor: "pointer", border: "1.5px solid #111", borderRadius: 999, background: on ? "#111" : "transparent", color: on ? "#fff" : "#111", transition: "all .15s ease" });
-const footer = { textAlign: "center", padding: "18px", fontSize: 12, color: "#aaa", borderTop: "1px solid #e2e2e2" };
+// ---- Styles (dark theme: black bg, white text, gold + red accents) ----
+const GOLD = "#d4af37";
+const GOLDDIM = "#b8941f";
+const RED = "#e23b3b";
+const BG = "#0c0c0d";        // page background
+const PANEL = "#161617";      // cards / panels
+const PANEL2 = "#1f1f21";     // raised / hover
+const LINE = "#2c2c2e";       // borders
+const TXT = "#f2f2f0";        // primary text
+const MUTE = "#9a9a98";       // secondary text
+const FAINT = "#6e6e6c";      // tertiary text
+
+const wrap = { fontFamily: "'Inter', sans-serif", color: TXT, background: BG, minHeight: "100vh", maxWidth: 1180, margin: "0 auto" };
+const header = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 26px", background: "#0a0a0b", borderBottom: `2px solid ${GOLD}`, position: "sticky", top: 0, zIndex: 5 };
+const brandTitle = { fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: ".06em", color: GOLD };
+const brandSub = { fontSize: 10.5, letterSpacing: ".22em", color: MUTE, fontFamily: "'Oswald',sans-serif", marginTop: 2 };
+const navBtn = (on) => ({ fontFamily: "'Oswald',sans-serif", fontWeight: 600, fontSize: 13, letterSpacing: ".08em", textTransform: "uppercase", padding: "9px 18px", cursor: "pointer", border: `1.5px solid ${on ? GOLD : LINE}`, borderRadius: 999, background: on ? GOLD : "transparent", color: on ? "#0c0c0d" : TXT, transition: "all .15s ease" });
+const footer = { textAlign: "center", padding: "18px", fontSize: 12, color: FAINT, borderTop: `1px solid ${LINE}` };
 const statGrid = { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 };
-const statCard = { background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: "22px 20px" };
-const card = { background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: 18 };
-const cardTitle = { fontFamily: "'Oswald',sans-serif", fontSize: 12.5, letterSpacing: ".12em", textTransform: "uppercase", color: "#888", fontWeight: 600, marginBottom: 14, paddingBottom: 10, borderBottom: "1px solid #eee" };
+const statCard = { background: PANEL, border: `1px solid ${LINE}`, borderRadius: 14, padding: "22px 20px" };
+const card = { background: PANEL, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18 };
+const cardTitle = { fontFamily: "'Oswald',sans-serif", fontSize: 12.5, letterSpacing: ".12em", textTransform: "uppercase", color: GOLD, fontWeight: 600, marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${LINE}` };
 const cardGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 };
-const clientCard = { textAlign: "left", background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: 18, cursor: "pointer", transition: "transform .15s ease, box-shadow .15s ease", fontFamily: "'Inter',sans-serif", color: "#111" };
-const avatar = { width: 42, height: 42, borderRadius: "50%", background: "#111", color: "#fff", display: "grid", placeItems: "center", fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 15, flexShrink: 0 };
-const miniLabel = { display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#888", marginBottom: 5 };
-const search = { padding: "9px 12px", border: "1.5px solid #ddd", borderRadius: 8, fontFamily: "'Inter',sans-serif", fontSize: 14, outline: "none", background: "#fff" };
+const clientCard = { textAlign: "left", background: PANEL, border: `1px solid ${LINE}`, borderRadius: 14, padding: 18, cursor: "pointer", transition: "transform .15s ease, box-shadow .15s ease, border-color .15s ease", fontFamily: "'Inter',sans-serif", color: TXT };
+const avatar = { width: 42, height: 42, borderRadius: "50%", background: GOLD, color: "#0c0c0d", display: "grid", placeItems: "center", fontFamily: "'Oswald',sans-serif", fontWeight: 700, fontSize: 15, flexShrink: 0 };
+const miniLabel = { display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTE, marginBottom: 5 };
+const search = { padding: "9px 12px", border: `1.5px solid ${LINE}`, borderRadius: 8, fontFamily: "'Inter',sans-serif", fontSize: 14, outline: "none", background: PANEL2, color: TXT };
 const select = { ...search, cursor: "pointer" };
-const primaryBtn = { background: "#111", color: "#fff", border: "1.5px solid #111", borderRadius: 8, padding: "9px 16px", fontFamily: "'Oswald',sans-serif", fontWeight: 600, letterSpacing: ".05em", fontSize: 13, cursor: "pointer", textTransform: "uppercase" };
-const ghostBtn = { ...primaryBtn, background: "transparent", color: "#111" };
-const dangerBtn = { ...primaryBtn, background: "#b00020", borderColor: "#b00020" };
-const dangerGhost = { ...ghostBtn, color: "#b00020", borderColor: "#e0b4bb", fontSize: 12 };
-const backBtn = { background: "transparent", border: "none", color: "#888", cursor: "pointer", fontSize: 13, fontFamily: "'Oswald',sans-serif", letterSpacing: ".05em", padding: 0, marginBottom: 14 };
-const profileHead = { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #e6e6e8", borderRadius: 14, padding: "18px 22px", marginBottom: 18, flexWrap: "wrap", gap: 12 };
-const fieldRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f2f2f2" };
-const fieldLabel = { fontSize: 12.5, color: "#999", letterSpacing: ".04em" };
-const textarea = { width: "100%", minHeight: 90, padding: "10px 12px", border: "1.5px solid #ddd", borderRadius: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, resize: "vertical", outline: "none" };
-const skillRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid #f4f4f4" };
-const attentionRow = { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "#fafafa", border: "1px solid #eee", borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer", textAlign: "left", fontFamily: "'Inter',sans-serif", color: "#111" };
-const logRow = { display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid #f4f4f4" };
-const logDot = { width: 8, height: 8, borderRadius: "50%", background: "#111", marginTop: 6, flexShrink: 0 };
+const primaryBtn = { background: GOLD, color: "#0c0c0d", border: `1.5px solid ${GOLD}`, borderRadius: 8, padding: "9px 16px", fontFamily: "'Oswald',sans-serif", fontWeight: 700, letterSpacing: ".05em", fontSize: 13, cursor: "pointer", textTransform: "uppercase" };
+const ghostBtn = { ...primaryBtn, background: "transparent", color: GOLD };
+const dangerBtn = { ...primaryBtn, background: RED, borderColor: RED, color: "#fff" };
+const dangerGhost = { ...ghostBtn, color: RED, borderColor: "#5a2222" };
+const backBtn = { background: "transparent", border: "none", color: MUTE, cursor: "pointer", fontSize: 13, fontFamily: "'Oswald',sans-serif", letterSpacing: ".05em", padding: 0, marginBottom: 14 };
+const profileHead = { display: "flex", justifyContent: "space-between", alignItems: "center", background: PANEL, border: `1px solid ${LINE}`, borderRadius: 14, padding: "18px 22px", marginBottom: 18, flexWrap: "wrap", gap: 12 };
+const fieldRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${LINE}` };
+const fieldLabel = { fontSize: 12.5, color: MUTE, letterSpacing: ".04em" };
+const textarea = { width: "100%", minHeight: 90, padding: "10px 12px", border: `1.5px solid ${LINE}`, borderRadius: 8, fontFamily: "'Inter',sans-serif", fontSize: 13.5, resize: "vertical", outline: "none", background: PANEL2, color: TXT };
+const skillRow = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${LINE}` };
+const attentionRow = { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: PANEL2, border: `1px solid ${LINE}`, borderRadius: 10, padding: "12px 14px", marginBottom: 8, cursor: "pointer", textAlign: "left", fontFamily: "'Inter',sans-serif", color: TXT };
+const logRow = { display: "flex", gap: 12, padding: "10px 0", borderBottom: `1px solid ${LINE}` };
+const logDot = { width: 8, height: 8, borderRadius: "50%", background: GOLD, marginTop: 6, flexShrink: 0 };
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
