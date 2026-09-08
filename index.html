@@ -69,6 +69,7 @@ function useIsMobile(breakpoint = 720) {
 
 // ---- Domain config -----------------------------------------
 const LEVELS = ["Beginner", "Intermediate", "Advanced"];
+const GENDERS = ["Female", "Male", "Other"];
 
 const LEVEL_STYLE = {
   Beginner: { ring: "#4a4a4c", fill: "#1f1f21", text: "#cfcfcd" },
@@ -103,26 +104,34 @@ const PLANS = {
 const PLAN_TYPES = Object.keys(PLANS);
 const LOW_THRESHOLD = 3; // warn when this many sessions (or fewer) remain
 
-// Weekly class schedule. day: 0=Sun … 6=Sat. Edit this list to change classes.
+// Weekly class schedule for Damac Hills 2. day: 0=Sun … 6=Sat.
+// `girlsOnly: true` restricts the register to female clients.
 const CLASS_SCHEDULE = [
-  { day: 1, time: "09:00", name: "Adult Group" },
-  { day: 2, time: "09:00", name: "Adult Group" },
-  { day: 2, time: "18:30", name: "Adult Group" },
-  { day: 3, time: "09:00", name: "Adult Group" },
-  { day: 4, time: "09:00", name: "Adult Group" },
-  { day: 4, time: "18:30", name: "Adult Group" },
-  { day: 5, time: "09:00", name: "Adult Group" },
-  { day: 6, time: "09:00", name: "Adult Group" },
-  { day: 6, time: "10:15", name: "Adult Group" },
-  { day: 0, time: "09:00", name: "Adult Group" },
-  // Outdoor Kids Group A (5–9 yrs) — Mon/Wed/Fri 17:30
-  { day: 1, time: "17:30", name: "Kids A (5-9)" },
-  { day: 3, time: "17:30", name: "Kids A (5-9)" },
-  { day: 5, time: "17:30", name: "Kids A (5-9)" },
-  // Outdoor Kids Group B (10–15 yrs) — Mon/Wed/Fri 18:30
-  { day: 1, time: "18:30", name: "Kids B (10-15)" },
-  { day: 3, time: "18:30", name: "Kids B (10-15)" },
-  { day: 5, time: "18:30", name: "Kids B (10-15)" },
+  // --- Adult Boxing & Kickboxing (daily 9am + evening slots) ---
+  { day: 1, time: "09:00", name: "Kickboxing & Upper" },
+  { day: 1, time: "18:00", name: "Kickboxing & Upper" },
+  { day: 2, time: "09:00", name: "Boxing & Lower" },
+  { day: 3, time: "09:00", name: "Kickboxing & Total" },
+  { day: 4, time: "09:00", name: "Boxing & Lower" },
+  { day: 4, time: "18:30", name: "Boxing & Lower" },
+  { day: 5, time: "09:00", name: "Kickboxing & Upper" },
+  { day: 6, time: "09:00", name: "Boxing & Cardio" },
+  { day: 0, time: "09:00", name: "Kickboxing & Cardio" },
+
+  // --- Only Girls Kickboxing (3 sessions/week) ---
+  { day: 3, time: "18:30", name: "Only Girls Kickboxing", girlsOnly: true },
+  { day: 5, time: "18:30", name: "Only Girls Kickboxing", girlsOnly: true },
+  { day: 0, time: "17:00", name: "Only Girls Kickboxing", girlsOnly: true },
+
+  // --- Muay Thai (3 sessions/week, mornings) ---
+  { day: 2, time: "08:00", name: "Muay Thai" },
+  { day: 3, time: "08:00", name: "Muay Thai" },
+  { day: 5, time: "08:00", name: "Muay Thai" },
+
+  // --- Youth Boxing (16-18) ---
+  { day: 2, time: "17:00", name: "Youth Boxing (16-18)" },
+  { day: 4, time: "17:00", name: "Youth Boxing (16-18)" },
+  { day: 0, time: "16:00", name: "Youth Boxing Sparring Day" },
 ];
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -328,6 +337,7 @@ function newClient(over = {}) {
     phone: "",
     email: "",
     age: "",                 // whole-number age; under 16 requires a guardian
+    gender: "",              // "" | "Female" | "Male" | "Other"
     guardianName: "",        // required if under 16
     guardianPhone: "",       // required if under 16
     level: "Beginner",
@@ -545,6 +555,7 @@ function ParqDialog({ onCancel, onComplete }) {
   const isMobile = useIsMobile();
   const [name, setName] = useState("");
   const [ageStr, setAgeStr] = useState("");
+  const [gender, setGender] = useState("");
   const [guardianName, setGuardianName] = useState("");
   const [guardianPhone, setGuardianPhone] = useState("");
   const [answers, setAnswers] = useState({});       // index -> "yes" | "no"
@@ -565,6 +576,7 @@ function ParqDialog({ onCancel, onComplete }) {
     onComplete({
       name: name.trim(),
       age: String(age),
+      gender,
       guardianName: minor ? guardianName.trim() : "",
       guardianPhone: minor ? guardianPhone.trim() : "",
       parq: {
@@ -614,6 +626,14 @@ function ParqDialog({ onCancel, onComplete }) {
                 Under 16 — guardian details required.
               </div>
             )}
+          </div>
+          <div>
+            <div style={{ ...fieldLabel, marginBottom: 4 }}>Gender <span style={{ color: "#9a9a98", fontWeight: 400 }}>(optional — needed for Girls-only classes)</span></div>
+            <select value={gender} onChange={(e) => setGender(e.target.value)}
+              style={{ ...select, width: "100%", boxSizing: "border-box" }}>
+              <option value="">— Not set —</option>
+              {GENDERS.map((g) => <option key={g}>{g}</option>)}
+            </select>
           </div>
           {minor && (
             <div style={{ background: "#1f1f21", border: "1.5px solid #d4af37", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -770,6 +790,7 @@ function App() {
     const c = newClient({
       name: data.name,
       age: data.age,
+      gender: data.gender,
       guardianName: data.guardianName,
       guardianPhone: data.guardianPhone,
       parq: data.parq,
@@ -1006,7 +1027,7 @@ function ClassesView({ roster, onCheckIn, onCheckOut }) {
                   return (
                     <button
                       key={c.time}
-                      onClick={() => setOpenOcc({ dateStr, time: c.time, name: c.name, day: d.getDay() })}
+                      onClick={() => setOpenOcc({ dateStr, time: c.time, name: c.name, day: d.getDay(), girlsOnly: !!c.girlsOnly })}
                       className="da-clientcard"
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "center",
@@ -1049,8 +1070,16 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
     return () => { alive = false; };
   }, [id]);
 
+  function eligibility(client) {
+    if (occ.girlsOnly && client.gender !== "Female") {
+      return { ok: false, reason: client.gender ? "Only Girls class — not eligible" : "Only Girls class — gender not set" };
+    }
+    return { ok: true };
+  }
   function toggle(clientId) {
     if (!present) return;
+    const client = roster.find((x) => x.id === clientId);
+    if (client && !eligibility(client).ok) return;
     const isIn = present.includes(clientId);
     const next = isIn ? present.filter((x) => x !== clientId) : [...present, clientId];
     setPresent(next);
@@ -1074,6 +1103,11 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
             {occ.time} · {occ.name}
           </div>
           <div style={{ fontSize: 12.5, color: "#9a9a98", marginTop: 4 }}>{niceDate}</div>
+          {occ.girlsOnly && (
+            <div style={{ display: "inline-block", marginTop: 6, padding: "3px 10px", borderRadius: 6, background: "#2a2410", border: "1px solid #d4af37", fontSize: 11, fontFamily: "'Oswald',sans-serif", letterSpacing: ".06em", color: "#d4af37", fontWeight: 700, textTransform: "uppercase" }}>
+              ♀ Only Girls — female clients only
+            </div>
+          )}
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 800, fontSize: 30 }}>
@@ -1097,8 +1131,10 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
           {list.map((c) => {
             const isIn = present.includes(c.id);
             const rem = sessionsRemaining(c, todayStr()); // null for unlimited
+            const elig = eligibility(c);
             return (
-              <div key={c.id} style={{ ...skillRow, cursor: "pointer" }} onClick={() => toggle(c.id)}>
+              <div key={c.id} style={{ ...skillRow, cursor: elig.ok ? "pointer" : "not-allowed", opacity: elig.ok ? 1 : 0.42 }}
+                onClick={() => elig.ok && toggle(c.id)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{
                     width: 24, height: 24, borderRadius: 6, flexShrink: 0,
@@ -1114,8 +1150,8 @@ function ClassRegister({ roster, occ, onBack, onCheckIn, onCheckOut }) {
                   </div>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14.5 }}>{c.name}</div>
-                    <div style={{ fontSize: 11.5, color: (rem !== null && rem <= LOW_THRESHOLD) ? "#e23b3b" : "#999" }}>
-                      {c.plan}{rem === null ? "" : ` · ${rem <= 0 ? "needs renewal" : `${rem} left`}`}
+                    <div style={{ fontSize: 11.5, color: !elig.ok ? "#e23b3b" : (rem !== null && rem <= LOW_THRESHOLD) ? "#e23b3b" : "#999" }}>
+                      {!elig.ok ? elig.reason : `${c.plan}${rem === null ? "" : ` · ${rem <= 0 ? "needs renewal" : `${rem} left`}`}`}
                     </div>
                   </div>
                 </div>
@@ -1661,6 +1697,15 @@ function Profile({ client, editing, setEditing, onChange, onBack, onDelete, isMo
                 <Field label="Guardian phone" editing={editing} value={client.guardianPhone} onChange={(v) => onChange({ guardianPhone: v })} />
               </>
             )}
+            <div style={fieldRow}>
+              <span style={fieldLabel}>Gender</span>
+              {editing ? (
+                <select value={client.gender || ""} onChange={(e) => onChange({ gender: e.target.value })} style={select}>
+                  <option value="">— Not set —</option>
+                  {GENDERS.map((g) => <option key={g}>{g}</option>)}
+                </select>
+              ) : <span style={{ fontSize: 14 }}>{client.gender || "—"}</span>}
+            </div>
             <div style={fieldRow}>
               <span style={fieldLabel}>Level</span>
               {editing ? (
