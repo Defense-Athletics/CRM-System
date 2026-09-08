@@ -27,7 +27,14 @@
 <body>
   <div id="root"></div>
 
-  <script type="text/babel" data-presets="react">
+  <script type="text/babel">
+    // No `data-presets` attribute: Babel Standalone then uses its safe
+    // default preset which includes the CLASSIC React JSX runtime. If you
+    // explicitly set data-presets="react", the modern "automatic" runtime
+    // is used, which injects `import { jsx as _jsx } ...` at the top of the
+    // compiled code — that's an ES-module statement and fails in a plain
+    // <script> tag with "Cannot use import statement outside a module".
+    // So: leave the data-presets attribute OFF for this app.
 const { useState, useEffect, useMemo } = React;
 
 /* ============================================================
